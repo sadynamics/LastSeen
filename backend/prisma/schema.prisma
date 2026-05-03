@@ -1,0 +1,224 @@
+// LastSeen data model.
+// TimescaleDB hypertable for PresenceEvent is created via raw SQL migration
+// (Prisma doesn't natively know about hypertables).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Identity ----------
+
+model User {
+  id        String    @id @default(cuid())
+  appleSub  String    @unique
+  email     String?
+  locale    String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  devices         Device[]
+  trackedNumbers  TrackedNumber[]
+  subscriptions   Subscription[]
+
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model Device {
+  id          String   @id @default(cuid())
+  userId      String
+  apnsToken   String   @unique
+  appVersion  String?
+  osVersion   String?
+  locale      String?
+  createdAt   DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("devices")
+}
+
+// ---------- Billing ----------
+
+enum SubscriptionStatus {
+  ACTIVE
+  IN_GRACE_PERIOD
+  IN_BILLING_RETRY
+  EXPIRED
+  REVOKED
+  REFUNDED
+  PAUSED
+}
+
+enum AppleEnvironment {
+  Sandbox
+  Production
+}
+
+model Subscription {
+  id                    String             @id @default(cuid())
+  userId                String
+  productId             String
+  originalTransactionId String             @unique
+  latestTransactionId   String?
+  webOrderLineItemId    String?
+  status                SubscriptionStatus
+  environment           AppleEnvironment
+  purchaseDate          DateTime
+  expiresAt             DateTime
+  autoRenewEnabled      Boolean            @default(true)
+  autoRenewProductId    String?
+  cancellationDate      DateTime?
+  cancellationReason    String?
+  rawJws                String?            @db.Text
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([status])
+  @@map("subscriptions")
+}
+
+// ---------- Scraper accounts ----------
+
+enum ScraperStatus {
+  PAIRING
+  WARMING
+  HEALTHY
+  COOLING
+  BANNED
+  RETIRED
+}
+
+model ScraperAccount {
+  id             String        @id @default(cuid())
+  label          String
+  jid            String?       @unique
+  phoneE164      String?       @unique
+  status         ScraperStatus @default(PAIRING)
+  authStateKey   String        @unique // S3 key for the Baileys multi-file state
+  warmupUntil    DateTime?
+  lastHeartbeat  DateTime?
+  banReason      String?
+  capacity       Int           @default(50)
+  proxyUrl       String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  trackedNumbers TrackedNumber[]
+  presenceEvents PresenceEvent[]
+
+  @@index([status])
+  @@map("scraper_accounts")
+}
+
+// ---------- Tracking ----------
+
+model TrackedNumber {
+  id                String    @id @default(cuid())
+  userId            String
+  e164              String
+  jid               String?
+  displayName       String?
+  countryCode       String?
+  scraperAccountId  String?
+  archivedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scraperAccount ScraperAccount?  @relation(fields: [scraperAccountId], references: [id], onDelete: SetNull)
+  events         PresenceEvent[]
+  rollups        DailyRollup[]
+  prefs          NotificationPref?
+
+  @@unique([userId, e164])
+  @@index([userId])
+  @@index([scraperAccountId])
+  @@index([jid])
+  @@map("tracked_numbers")
+}
+
+enum PresenceStatus {
+  AVAILABLE
+  UNAVAILABLE
+  COMPOSING
+  RECORDING
+  PAUSED
+}
+
+model PresenceEvent {
+  id               String         @id @default(cuid())
+  trackedNumberId  String
+  scraperAccountId String?
+  ts               DateTime       @default(now())
+  status           PresenceStatus
+
+  trackedNumber  TrackedNumber   @relation(fields: [trackedNumberId], references: [id], onDelete: Cascade)
+  scraperAccount ScraperAccount? @relation(fields: [scraperAccountId], references: [id], onDelete: SetNull)
+
+  @@index([trackedNumberId, ts])
+  @@map("presence_events")
+}
+
+model DailyRollup {
+  id                  String    @id @default(cuid())
+  trackedNumberId     String
+  day                 DateTime  @db.Date
+  totalOnlineSeconds  Int       @default(0)
+  sessionCount        Int       @default(0)
+  firstOnline         DateTime?
+  lastOnline          DateTime?
+  peakHour            Int?
+  hourly              Json      // [{hour: 0..23, seconds: int, sessions: int}]
+  finalized           Boolean   @default(false)
+  computedAt          DateTime  @default(now())
+
+  trackedNumber TrackedNumber @relation(fields: [trackedNumberId], references: [id], onDelete: Cascade)
+
+  @@unique([trackedNumberId, day])
+  @@index([day])
+  @@map("daily_rollups")
+}
+
+model NotificationPref {
+  trackedNumberId       String   @id
+  onlineEnabled         Boolean  @default(true)
+  offlineEnabled        Boolean  @default(false)
+  sessionEndedEnabled   Boolean  @default(true)
+  dailySummaryEnabled   Boolean  @default(true)
+  quietHoursStart       Int?     // 0..23
+  quietHoursEnd         Int?     // 0..23
+  timezone              String?  // IANA, e.g. "Europe/Istanbul"
+  updatedAt             DateTime @updatedAt
+
+  trackedNumber TrackedNumber @relation(fields: [trackedNumberId], references: [id], onDelete: Cascade)
+
+  @@map("notification_prefs")
+}
+
+// ---------- Audit ----------
+
+model AppleNotification {
+  id              String   @id @default(cuid())
+  notificationId  String   @unique
+  notificationType String
+  subtype         String?
+  payload         Json
+  receivedAt      DateTime @default(now())
+  processedAt     DateTime?
+  error           String?
+
+  @@map("apple_notifications")
+}

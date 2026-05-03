@@ -1,0 +1,23 @@
+api.lastseen.app {
+    encode zstd gzip
+    reverse_proxy http://api:3000
+
+    @apple_s2s path /v1/billing/apple-notifications
+    handle @apple_s2s {
+        request_body {
+            max_size 1MB
+        }
+    }
+
+    log {
+        output file /var/log/caddy/access.log
+        format json
+    }
+
+    header {
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+}

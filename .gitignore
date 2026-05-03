@@ -1,0 +1,68 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad
+build/
+DerivedData/
+*.moved-aside
+*.hmap
+*.ipa
+*.xcarchive
+
+# Swift Package Manager
+.swiftpm/
+Package.resolved
+
+# Node
+node_modules/
+.pnpm-store/
+dist/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env
+.env
+.env.local
+.env.*.local
+.env.railway.generated
+!.env.example
+
+# Railway
+.railway/
+
+# Prisma
+backend/prisma/migrations/dev.db*
+
+# Baileys auth state
+backend/.baileys-auth/
+backend/auth-state/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test / coverage
+coverage/
+.nyc_output/
+*.lcov
+
+# Build / cache
+.cache/
+.turbo/
+.tsbuildinfo
+
+# Sentry
+.sentryclirc
