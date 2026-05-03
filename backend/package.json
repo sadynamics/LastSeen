@@ -32,6 +32,7 @@
     "@fastify/sensible": "^5.6.0",
     "fastify-plugin": "^4.5.1",
     "@prisma/client": "^5.20.0",
+    "prisma": "^5.20.0",
     "@sentry/node": "^8.30.0",
     "@whiskeysockets/baileys": "^6.7.8",
     "apn": "^2.2.0",
@@ -54,7 +55,6 @@
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
     "eslint": "^8.57.1",
-    "prisma": "^5.20.0",
     "tsx": "^4.19.1",
     "typescript": "^5.6.2",
     "vitest": "^2.1.1"

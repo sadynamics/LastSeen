@@ -15,7 +15,7 @@ function run(cmd, args) {
 
 async function main() {
   console.log('[start-worker] applying migrations...');
-  await run('npx', ['--yes', 'prisma', 'migrate', 'deploy']);
+  await run('node_modules/.bin/prisma', ['migrate', 'deploy']);
 
   console.log('[start-worker] starting BullMQ worker...');
   const worker = spawn(process.execPath, ['dist/workers/index.js'], {

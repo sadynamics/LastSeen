@@ -27,7 +27,7 @@ function run(cmd, args, opts = {}) {
 
 async function main() {
   console.log('[start-api] applying migrations...');
-  await run('npx', ['--yes', 'prisma', 'migrate', 'deploy']);
+  await run('node_modules/.bin/prisma', ['migrate', 'deploy']);
 
   console.log('[start-api] configuring timescale (if available)...');
   await run(process.execPath, ['scripts/init-timescale.js']);
