@@ -188,12 +188,24 @@ export class BaileysSession extends EventEmitter {
 
   /** Resolve a phone number to its WhatsApp JID, or null if not on WhatsApp. */
   async lookupJid(phoneE164: string): Promise<string | null> {
+    const looked = await this.lookupJidWithLid(phoneE164);
+    return looked?.jid ?? null;
+  }
+
+  /**
+   * Resolve a phone number to BOTH its phone-form JID and its LID-form JID.
+   * WhatsApp publishes presence updates keyed by the LID for many contacts,
+   * so we need both to correctly attribute presence events to a tracked
+   * number.
+   */
+  async lookupJidWithLid(phoneE164: string): Promise<{ jid: string; lid: string | null } | null> {
     if (!this.sock) throw new Error('Session not connected');
     const cleaned = phoneE164.replace(/^\+/, '');
     const res = await this.sock.onWhatsApp(cleaned);
     const first = res?.[0];
     if (!first?.exists) return null;
-    return first.jid;
+    const lid = typeof first.lid === 'string' && first.lid.length > 0 ? first.lid : null;
+    return { jid: first.jid, lid };
   }
 
   /** Subscribe to presence updates for a JID. Idempotent. */

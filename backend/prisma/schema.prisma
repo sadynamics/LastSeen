@@ -130,6 +130,11 @@ model TrackedNumber {
   userId            String
   e164              String
   jid               String?
+  /// LID-format JID returned by WhatsApp's onWhatsApp probe. WhatsApp now
+  /// fans out presence updates keyed by @lid (privacy format) instead of
+  /// the @s.whatsapp.net phone JID, so we resolve presence events against
+  /// either field.
+  lid               String?
   displayName       String?
   countryCode       String?
   scraperAccountId  String?
@@ -147,6 +152,7 @@ model TrackedNumber {
   @@index([userId])
   @@index([scraperAccountId])
   @@index([jid])
+  @@index([lid])
   @@map("tracked_numbers")
 }
 

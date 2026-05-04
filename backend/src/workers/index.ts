@@ -57,8 +57,22 @@ async function runMaintenance(): Promise<void> {
     await trackingQueue().add('track', { type: 'track', trackedNumberId: o.id });
   }
 
-  if (promoted > 0 || orphans.length > 0) {
-    log.info({ promoted, requeued: orphans.length }, 'maintenance pass');
+  // Also re-queue any rows that lack a populated `lid` so the worker can
+  // refresh both the phone-JID and the LID via onWhatsApp(). Without the LID
+  // we miss every presence event WhatsApp publishes under @lid.
+  const missingLid = await prisma.trackedNumber.findMany({
+    where: { archivedAt: null, lid: null, scraperAccountId: { not: null } },
+    select: { id: true },
+  });
+  for (const t of missingLid) {
+    await trackingQueue().add('track', { type: 'track', trackedNumberId: t.id });
+  }
+
+  if (promoted > 0 || orphans.length > 0 || missingLid.length > 0) {
+    log.info(
+      { promoted, requeued: orphans.length, lidBackfill: missingLid.length },
+      'maintenance pass',
+    );
   }
 }
 

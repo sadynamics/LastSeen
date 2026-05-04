@@ -55,19 +55,31 @@ export function startTrackingWorker(): Worker<TrackingJob> {
             throw new Error('scraper not open yet');
           }
 
-          // Resolve JID if missing.
+          // Resolve JID + LID. We may have an old row that pre-dates the LID
+          // column (jid populated, lid null) — refresh that on the fly so
+          // presence events keyed by @lid still match.
           let jid = tracked.jid;
-          if (!jid) {
-            jid = await session.lookupJid(tracked.e164);
-            if (!jid) {
+          let lid = tracked.lid;
+          if (!jid || !lid) {
+            const looked = await session.lookupJidWithLid(tracked.e164);
+            if (!looked) {
               log.warn({ trackedNumberId: tracked.id, e164: tracked.e164 }, 'number not on whatsapp');
               return;
             }
-            await prisma.trackedNumber.update({ where: { id: tracked.id }, data: { jid } });
+            jid = looked.jid;
+            lid = looked.lid ?? lid;
+            await prisma.trackedNumber.update({
+              where: { id: tracked.id },
+              data: { jid, lid },
+            });
           }
 
+          // Subscribe under both forms — WhatsApp may push under either.
           await session.subscribe(jid);
-          log.info({ trackedNumberId: tracked.id, jid }, 'subscribed');
+          if (lid) {
+            await session.subscribe(lid).catch((err) => log.warn({ err, lid }, 'subscribe lid failed'));
+          }
+          log.info({ trackedNumberId: tracked.id, jid, lid }, 'subscribed');
           return;
         }
         case 'untrack': {

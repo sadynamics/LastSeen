@@ -29,11 +29,20 @@ const STATUS_MAP: Record<PresenceEventPayload['status'], PresenceStatus> = {
  * fans out notification + rollup jobs.
  */
 export async function ingestPresence(ev: PresenceEventPayload): Promise<void> {
+  // WhatsApp now publishes most presence updates under the contact's LID
+  // (privacy-preserving identifier) instead of their phone JID. Match either
+  // so events get attributed to the right tracked number.
   const tracked = await prisma.trackedNumber.findFirst({
-    where: { jid: ev.jid, archivedAt: null },
+    where: {
+      archivedAt: null,
+      OR: [{ jid: ev.jid }, { lid: ev.jid }],
+    },
     select: { id: true, userId: true },
   });
-  if (!tracked) return;
+  if (!tracked) {
+    log.debug({ jid: ev.jid, status: ev.status }, 'presence event without matching tracked number');
+    return;
+  }
 
   const mapped = STATUS_MAP[ev.status];
   const now = ev.ts.getTime();
