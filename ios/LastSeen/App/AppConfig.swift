@@ -19,7 +19,7 @@ enum AppConfig {
         #if DEBUG
         return URL(string: "http://localhost:3000")!
         #else
-        return URL(string: "https://api.lastseen.app")!
+        return URL(string: "https://api-production-466c.up.railway.app")!
         #endif
     }()
 
