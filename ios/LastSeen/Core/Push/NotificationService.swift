@@ -38,10 +38,13 @@ final class NotificationService: NSObject {
             let granted = try await UNUserNotificationCenter.current()
                 .requestAuthorization(options: [.alert, .sound, .badge, .providesAppNotificationSettings])
             await refreshAuthorizationStatus()
+            LSAnalytics.shared.log(.notificationAuthorizationResult(granted: granted))
             guard granted else { return false }
             await registerForRemoteNotifications()
             return true
         } catch {
+            LSAnalytics.shared.log(.notificationAuthorizationResult(granted: false))
+            LSAnalytics.shared.logError(error, context: ["operation": "request_notification_authorization"])
             return false
         }
     }
@@ -68,9 +71,11 @@ final class NotificationService: NSObject {
             )
             _ = try await api.post("/v1/devices", body: body, as: DeviceRegistrationResponse.self)
             isRegistered = true
+            LSAnalytics.shared.log(.apnsTokenRegistered)
         } catch {
             // Best-effort. The user is signed in but our /devices register failed.
             // We retry on next app launch via start().
+            LSAnalytics.shared.logError(error, context: ["operation": "device_register"])
         }
     }
 }

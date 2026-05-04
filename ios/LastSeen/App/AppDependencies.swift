@@ -26,14 +26,34 @@ final class AppDependencies {
     }
 
     func bootstrap() async {
+        // Make sure Firebase is configured before any analytics call. The
+        // AppDelegate also calls this; LSAnalytics.configure() is idempotent.
+        LSAnalytics.shared.configure()
+
         await auth.restoreSessionIfAny()
+        identifyUserIfPossible()
+
         if auth.isAuthenticated {
             async let s: Void = subscriptions.start()
             async let t: Void = tracking.refresh()
             async let n: Void = notifications.start()
             _ = await (s, t, n)
+            // Once we have data, push the latest user properties.
+            LSAnalytics.shared.setSubscriptionStatus(subscriptions.isSubscribed,
+                                                    productId: subscriptions.activeProductId)
+            LSAnalytics.shared.setTrackedNumberCount(tracking.trackedNumbers.count)
         } else {
             await subscriptions.loadProducts()
+        }
+    }
+
+    /// Push current signed-in identity to analytics + crash reporting. Safe
+    /// to call multiple times; clears identity if there's no session.
+    func identifyUserIfPossible() {
+        if case .signedIn(let user) = auth.state {
+            LSAnalytics.shared.setUser(id: user.id, email: user.email)
+        } else {
+            LSAnalytics.shared.clearUser()
         }
     }
 }

@@ -26,25 +26,41 @@ final class TrackingService {
         do {
             let list: TrackedNumbersList = try await api.get("/v1/tracked-numbers")
             trackedNumbers = list.items
+            LSAnalytics.shared.setTrackedNumberCount(trackedNumbers.count)
             await refreshLiveStatuses()
         } catch APIError.unauthorized {
             trackedNumbers = []
         } catch {
             lastError = error.localizedDescription
+            LSAnalytics.shared.logError(error, context: ["operation": "tracked_numbers_refresh"])
         }
     }
 
     func add(phone: String, defaultCountry: String?, displayName: String?) async throws -> TrackedNumber {
         let body = CreateTrackedNumberRequest(phone: phone, defaultCountry: defaultCountry, displayName: displayName)
-        let resp: TrackedNumberWrapper = try await api.post("/v1/tracked-numbers", body: body)
-        await refresh()
-        return resp.item
+        do {
+            let resp: TrackedNumberWrapper = try await api.post("/v1/tracked-numbers", body: body)
+            LSAnalytics.shared.log(.trackedNumberAdded(country: defaultCountry))
+            await refresh()
+            return resp.item
+        } catch {
+            LSAnalytics.shared.logError(error, context: ["operation": "tracked_number_add",
+                                                          "country": defaultCountry ?? "unknown"])
+            throw error
+        }
     }
 
     func remove(_ trackedNumberId: String) async throws {
-        try await api.delete("/v1/tracked-numbers/\(trackedNumberId)")
-        trackedNumbers.removeAll { $0.id == trackedNumberId }
-        liveStatuses.removeValue(forKey: trackedNumberId)
+        do {
+            try await api.delete("/v1/tracked-numbers/\(trackedNumberId)")
+            trackedNumbers.removeAll { $0.id == trackedNumberId }
+            liveStatuses.removeValue(forKey: trackedNumberId)
+            LSAnalytics.shared.log(.trackedNumberRemoved)
+            LSAnalytics.shared.setTrackedNumberCount(trackedNumbers.count)
+        } catch {
+            LSAnalytics.shared.logError(error, context: ["operation": "tracked_number_remove"])
+            throw error
+        }
     }
 
     func sessions(for trackedNumberId: String, day: String) async throws -> SessionsForDay {
@@ -57,11 +73,16 @@ final class TrackingService {
     }
 
     func updatePrefs(for trackedNumberId: String, prefs: NotificationPrefs) async throws -> NotificationPrefs {
-        let resp: PrefsWrapper = try await api.put("/v1/tracked-numbers/\(trackedNumberId)/notifications", body: prefs)
-        if let idx = trackedNumbers.firstIndex(where: { $0.id == trackedNumberId }) {
-            trackedNumbers[idx].prefs = resp.prefs
+        do {
+            let resp: PrefsWrapper = try await api.put("/v1/tracked-numbers/\(trackedNumberId)/notifications", body: prefs)
+            if let idx = trackedNumbers.firstIndex(where: { $0.id == trackedNumberId }) {
+                trackedNumbers[idx].prefs = resp.prefs
+            }
+            return resp.prefs
+        } catch {
+            LSAnalytics.shared.logError(error, context: ["operation": "update_notification_prefs"])
+            throw error
         }
-        return resp.prefs
     }
 
     func startPolling(intervalSeconds: TimeInterval = 20) {

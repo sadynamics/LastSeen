@@ -56,44 +56,77 @@ final class SubscriptionService {
             isSubscribed = status.isSubscribed
             activeProductId = status.subscription?.productId
             expiresAt = status.subscription?.expiresAt
+            LSAnalytics.shared.setSubscriptionStatus(isSubscribed, productId: activeProductId)
         } catch APIError.unauthorized {
             // The auth flow will handle this; just clear local state.
             isSubscribed = false
             activeProductId = nil
             expiresAt = nil
+            LSAnalytics.shared.setSubscriptionStatus(false, productId: nil)
         } catch {
             lastError = error.localizedDescription
+            LSAnalytics.shared.logError(error, context: ["operation": "billing_status"])
         }
     }
 
     func purchase(_ product: Product) async throws -> PurchaseResult {
-        let result = try await product.purchase()
-        switch result {
-        case .success(let verification):
-            switch verification {
-            case .verified(let transaction):
-                try await sendToBackend(verification.jwsRepresentation)
-                await transaction.finish()
-                isSubscribed = true
-                activeProductId = transaction.productID
-                expiresAt = transaction.expirationDate
-                return .success
-            case .unverified(_, let error):
-                throw error
+        let currency = product.priceFormatStyle.currencyCode
+        LSAnalytics.shared.log(.purchaseStarted(productId: product.id,
+                                                price: product.price,
+                                                currency: currency))
+        do {
+            let result = try await product.purchase()
+            switch result {
+            case .success(let verification):
+                switch verification {
+                case .verified(let transaction):
+                    try await sendToBackend(verification.jwsRepresentation)
+                    await transaction.finish()
+                    isSubscribed = true
+                    activeProductId = transaction.productID
+                    expiresAt = transaction.expirationDate
+                    LSAnalytics.shared.setSubscriptionStatus(true, productId: transaction.productID)
+                    LSAnalytics.shared.log(.purchaseSucceeded(productId: product.id,
+                                                              price: product.price,
+                                                              currency: currency))
+                    return .success
+                case .unverified(_, let error):
+                    LSAnalytics.shared.log(.purchaseFailed(productId: product.id,
+                                                           reason: "unverified"))
+                    LSAnalytics.shared.logError(error, context: ["operation": "purchase_verify",
+                                                                  "product_id": product.id])
+                    throw error
+                }
+            case .userCancelled:
+                LSAnalytics.shared.log(.purchaseCancelled(productId: product.id))
+                return .userCancelled
+            case .pending:
+                LSAnalytics.shared.log(.purchasePending(productId: product.id))
+                return .pending
+            @unknown default:
+                return .pending
             }
-        case .userCancelled:
-            return .userCancelled
-        case .pending:
-            return .pending
-        @unknown default:
-            return .pending
+        } catch {
+            LSAnalytics.shared.log(.purchaseFailed(productId: product.id,
+                                                   reason: String(describing: type(of: error))))
+            LSAnalytics.shared.logError(error, context: ["operation": "purchase",
+                                                          "product_id": product.id])
+            throw error
         }
     }
 
     func restorePurchases() async throws {
-        try await AppStore.sync()
-        await syncCurrentEntitlements()
-        await refreshFromBackend()
+        LSAnalytics.shared.log(.restorePurchasesTapped)
+        do {
+            try await AppStore.sync()
+            await syncCurrentEntitlements()
+            await refreshFromBackend()
+            LSAnalytics.shared.log(.restorePurchasesSucceeded)
+        } catch {
+            LSAnalytics.shared.log(.restorePurchasesFailed(reason: String(describing: type(of: error))))
+            LSAnalytics.shared.logError(error, context: ["operation": "restore_purchases"])
+            throw error
+        }
     }
 
     // MARK: - Internals

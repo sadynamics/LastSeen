@@ -16,11 +16,7 @@ enum AppConfig {
            let url = URL(string: plist) {
             return url
         }
-        #if DEBUG
-        return URL(string: "http://localhost:3000")!
-        #else
         return URL(string: "https://api-production-466c.up.railway.app")!
-        #endif
     }()
 
     static let appGroup = "group.collabrainstech.LastSeen"

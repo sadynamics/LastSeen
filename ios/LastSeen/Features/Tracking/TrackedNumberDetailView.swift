@@ -3,6 +3,7 @@
 //
 
 import Charts
+import Combine
 import SwiftUI
 
 struct TrackedNumberDetailView: View {
@@ -13,6 +14,9 @@ struct TrackedNumberDetailView: View {
     @State private var weekly: WeeklyReport?
     @State private var prefs: NotificationPrefs
     @State private var isLoading = true
+    @State private var liveTick: Date = .now
+
+    private let liveTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
     init(trackedNumber: TrackedNumber) {
         self.trackedNumber = trackedNumber
@@ -29,10 +33,10 @@ struct TrackedNumberDetailView: View {
 
     var body: some View {
         ZStack {
-            Theme.Color.background.ignoresSafeArea()
+            AppBackground()
             ScrollView {
                 VStack(spacing: Theme.Spacing.lg) {
-                    header
+                    heroCard
                     if let sessionsToday {
                         todayCard(sessionsToday)
                     }
@@ -42,66 +46,130 @@ struct TrackedNumberDetailView: View {
                     notificationsCard
                     removeButton
                 }
-                .padding(Theme.Spacing.lg)
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.top, Theme.Spacing.sm)
+                .padding(.bottom, Theme.Spacing.xxl)
             }
+            .scrollIndicators(.hidden)
             if isLoading && sessionsToday == nil {
                 ProgressView().tint(Theme.Color.accent)
             }
         }
         .navigationTitle(trackedNumber.displayName ?? trackedNumber.e164)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .task { await loadAll() }
         .refreshable { await loadAll() }
+        .onReceive(liveTimer) { liveTick = $0 }
+        .trackScreen("tracked_number_detail", className: "TrackedNumberDetailView")
+        .onAppear { LSAnalytics.shared.log(.trackedNumberDetailViewed) }
     }
 
-    private var header: some View {
-        Card {
-            HStack(spacing: Theme.Spacing.lg) {
-                Avatar(initials: String(
-                    (trackedNumber.displayName ?? trackedNumber.e164).prefix(2)
-                ).uppercased())
-                .frame(width: 56, height: 56)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(trackedNumber.displayName ?? trackedNumber.e164)
-                        .font(.title3.bold())
-                        .foregroundStyle(Theme.Color.primaryText)
-                    Text(trackedNumber.e164)
-                        .font(.callout)
-                        .foregroundStyle(Theme.Color.secondaryText)
-                    let live = tracking.liveStatuses[trackedNumber.id]
-                    StatusPill(
-                        isOnline: live?.isOnline ?? false,
-                        label: liveLabel(live)
-                    )
-                    .padding(.top, 4)
+    // MARK: Hero
+
+    private var heroCard: some View {
+        let live = tracking.liveStatuses[trackedNumber.id]
+        return Card {
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                HStack(spacing: Theme.Spacing.md) {
+                    GradientAvatar(initials: initials,
+                                   seed: trackedNumber.e164,
+                                   size: 64)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(trackedNumber.displayName ?? trackedNumber.e164)
+                            .font(Theme.Font.title3)
+                            .foregroundStyle(Theme.Color.primaryText)
+                            .lineLimit(1)
+                        Text(trackedNumber.e164)
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Color.tertiaryText)
+                    }
+                    Spacer()
                 }
-                Spacer()
+
+                Divider().background(Theme.Color.separator)
+
+                HStack(alignment: .center, spacing: Theme.Spacing.md) {
+                    GlowingDot(isOn: live?.isOnline ?? false, size: 12)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(liveTitle(live))
+                            .font(Theme.Font.headline)
+                            .foregroundStyle(live?.isOnline == true ? Theme.Color.online : Theme.Color.primaryText)
+                        Text(liveSubtitle(live))
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Color.tertiaryText)
+                    }
+                    Spacer()
+                }
             }
         }
     }
 
+    private func liveTitle(_ live: LiveStatus?) -> String {
+        guard let live else { return "Loading…" }
+        if live.isOnline {
+            if let since = live.onlineSince {
+                let secs = Int(liveTick.timeIntervalSince(since))
+                return "Online for \(secs.asDuration)"
+            }
+            return "Online"
+        }
+        if let secs = live.lastSeenSecondsAgo {
+            return "Last seen \(secs.asDuration) ago"
+        }
+        return "No activity yet"
+    }
+
+    private func liveSubtitle(_ live: LiveStatus?) -> String {
+        if live?.isOnline == true { return "Currently active on WhatsApp" }
+        if live?.lastEventAt != nil { return "Updated continuously" }
+        return "Activity will appear here once detected"
+    }
+
+    private var initials: String {
+        if let name = trackedNumber.displayName, !name.isEmpty {
+            let parts = name.split(separator: " ")
+            if parts.count >= 2,
+               let first = parts.first?.first,
+               let second = parts.dropFirst().first?.first {
+                return "\(first)\(second)".uppercased()
+            }
+            return String(name.prefix(2)).uppercased()
+        }
+        return String(trackedNumber.e164.suffix(2))
+    }
+
+    // MARK: Today
+
     private func todayCard(_ sessions: SessionsForDay) -> some View {
         Card {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                HStack {
-                    Text("Today")
-                        .font(.headline)
-                        .foregroundStyle(Theme.Color.primaryText)
+                HStack(alignment: .firstTextBaseline) {
+                    SectionHeader(title: "Today", subtitle: nil)
                     Spacer()
                     Text(sessions.totalOnlineSeconds.asDuration)
-                        .font(.title3.monospacedDigit().bold())
+                        .font(Theme.Font.numericMedium)
                         .foregroundStyle(Theme.Color.online)
                 }
                 if sessions.sessions.isEmpty {
-                    Text("No activity yet today.")
-                        .font(.callout)
-                        .foregroundStyle(Theme.Color.secondaryText)
+                    HStack(spacing: 8) {
+                        Image(systemName: "moon.zzz.fill")
+                            .foregroundStyle(Theme.Color.tertiaryText)
+                        Text("No activity yet today.")
+                            .font(Theme.Font.callout)
+                            .foregroundStyle(Theme.Color.secondaryText)
+                    }
                 } else {
                     todayTimeline(sessions)
-                    Divider().background(Theme.Color.surfaceElevated)
-                    HStack {
-                        StatChip(title: "Sessions", value: "\(sessions.sessionCount)")
-                        StatChip(title: "Avg", value: avgPerSession(sessions))
+                    HStack(spacing: Theme.Spacing.md) {
+                        StatTile(label: "Sessions",
+                                 value: "\(sessions.sessionCount)",
+                                 systemImage: "list.bullet",
+                                 tint: Theme.Color.accent)
+                        StatTile(label: "Avg session",
+                                 value: avgPerSession(sessions),
+                                 systemImage: "stopwatch.fill",
+                                 tint: Theme.Color.accentSecondary)
                     }
                     sessionList(sessions)
                 }
@@ -112,37 +180,53 @@ struct TrackedNumberDetailView: View {
     private func todayTimeline(_ sessions: SessionsForDay) -> some View {
         let day = ISO8601DateFormatter.dayParser.date(from: sessions.day + "T00:00:00Z") ?? Calendar.current.startOfDay(for: .now)
         let endOfDay = day.addingTimeInterval(86_400)
-        return Chart {
-            ForEach(Array(sessions.sessions.enumerated()), id: \.offset) { _, s in
-                BarMark(
-                    xStart: .value("Start", s.start),
-                    xEnd: .value("End", s.end),
-                    y: .value("Row", "Online")
-                )
-                .foregroundStyle(Theme.Color.online)
-                .cornerRadius(2)
+        return VStack(alignment: .leading, spacing: 6) {
+            Chart {
+                ForEach(Array(sessions.sessions.enumerated()), id: \.offset) { _, s in
+                    BarMark(
+                        xStart: .value("Start", s.start),
+                        xEnd: .value("End", s.end),
+                        y: .value("Row", "Online")
+                    )
+                    .foregroundStyle(Theme.Gradient.online)
+                    .cornerRadius(3)
+                }
             }
-        }
-        .chartXScale(domain: day...endOfDay)
-        .chartXAxis {
-            AxisMarks(values: .stride(by: .hour, count: 6)) { value in
-                AxisValueLabel(format: .dateTime.hour())
-                    .foregroundStyle(Theme.Color.tertiaryText)
-                AxisGridLine()
-                    .foregroundStyle(Theme.Color.surfaceElevated)
+            .chartXScale(domain: day...endOfDay)
+            .chartXAxis {
+                AxisMarks(values: .stride(by: .hour, count: 6)) { _ in
+                    AxisValueLabel(format: .dateTime.hour())
+                        .foregroundStyle(Theme.Color.tertiaryText)
+                    AxisGridLine()
+                        .foregroundStyle(Theme.Color.separator)
+                }
             }
+            .chartYAxis(.hidden)
+            .frame(height: 38)
         }
-        .chartYAxis(.hidden)
-        .frame(height: 36)
+        .padding(Theme.Spacing.md)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
+                .fill(Color.white.opacity(0.04))
+        )
     }
 
     private func sessionList(_ sessions: SessionsForDay) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Recent sessions".uppercased())
+                .font(Theme.Font.label)
+                .tracking(1.0)
+                .foregroundStyle(Theme.Color.tertiaryText)
+                .padding(.top, 4)
             ForEach(Array(sessions.sessions.enumerated()), id: \.offset) { _, s in
-                HStack {
+                HStack(spacing: Theme.Spacing.sm) {
+                    Circle()
+                        .fill(Theme.Color.online)
+                        .frame(width: 6, height: 6)
                     Text(s.start, format: .dateTime.hour().minute())
                         .foregroundStyle(Theme.Color.secondaryText)
-                    Text("→")
+                    Image(systemName: "arrow.right")
+                        .font(.caption2)
                         .foregroundStyle(Theme.Color.tertiaryText)
                     Text(s.end, format: .dateTime.hour().minute())
                         .foregroundStyle(Theme.Color.secondaryText)
@@ -151,22 +235,21 @@ struct TrackedNumberDetailView: View {
                         .foregroundStyle(Theme.Color.primaryText)
                         .monospacedDigit()
                 }
-                .font(.caption)
+                .font(Theme.Font.caption)
             }
         }
-        .padding(.top, Theme.Spacing.sm)
     }
+
+    // MARK: Weekly
 
     private func weeklyCard(_ weekly: WeeklyReport) -> some View {
         Card {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                HStack {
-                    Text("Last 7 days")
-                        .font(.headline)
-                        .foregroundStyle(Theme.Color.primaryText)
+                HStack(alignment: .firstTextBaseline) {
+                    SectionHeader(title: "Last 7 days", subtitle: nil)
                     Spacer()
                     Text(weekly.totalOnlineSeconds.asDuration)
-                        .font(.title3.monospacedDigit().bold())
+                        .font(Theme.Font.numericMedium)
                         .foregroundStyle(Theme.Color.online)
                 }
                 Chart(weekly.days) { day in
@@ -174,13 +257,13 @@ struct TrackedNumberDetailView: View {
                         x: .value("Day", day.day),
                         y: .value("Minutes", day.totalOnlineSeconds / 60)
                     )
-                    .foregroundStyle(Theme.Color.accent.gradient)
-                    .cornerRadius(4)
+                    .foregroundStyle(Theme.Gradient.primaryButton)
+                    .cornerRadius(6)
                 }
                 .chartYAxis {
                     AxisMarks { _ in
                         AxisValueLabel().foregroundStyle(Theme.Color.tertiaryText)
-                        AxisGridLine().foregroundStyle(Theme.Color.surfaceElevated)
+                        AxisGridLine().foregroundStyle(Theme.Color.separator)
                     }
                 }
                 .chartXAxis {
@@ -189,30 +272,54 @@ struct TrackedNumberDetailView: View {
                     }
                 }
                 .frame(height: 160)
-                HStack {
-                    StatChip(title: "Daily avg", value: weekly.averagePerDaySeconds.asDuration)
-                    StatChip(title: "Sessions", value: "\(weekly.days.reduce(0) { $0 + $1.sessionCount })")
+
+                HStack(spacing: Theme.Spacing.md) {
+                    StatTile(label: "Daily avg",
+                             value: weekly.averagePerDaySeconds.asDuration,
+                             systemImage: "calendar",
+                             tint: Theme.Color.accent)
+                    StatTile(label: "Sessions",
+                             value: "\(weekly.days.reduce(0) { $0 + $1.sessionCount })",
+                             systemImage: "rectangle.stack.fill",
+                             tint: Theme.Color.accentSecondary)
                 }
             }
         }
     }
 
+    // MARK: Notifications
+
     private var notificationsCard: some View {
         Card {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                Text("Notifications")
-                    .font(.headline)
-                    .foregroundStyle(Theme.Color.primaryText)
-                Toggle("Online", isOn: prefBinding(\.onlineEnabled))
-                    .tint(Theme.Color.accent)
-                Toggle("Session ended", isOn: prefBinding(\.sessionEndedEnabled))
-                    .tint(Theme.Color.accent)
-                Toggle("Daily summary", isOn: prefBinding(\.dailySummaryEnabled))
-                    .tint(Theme.Color.accent)
+                SectionHeader(title: "Notifications",
+                              subtitle: "Pick what you want to be notified about.")
+                toggleRow(icon: "circle.fill", tint: Theme.Color.online,
+                          title: "Online", binding: prefBinding(\.onlineEnabled))
+                Divider().background(Theme.Color.separator)
+                toggleRow(icon: "checkmark.circle.fill", tint: Theme.Color.accent,
+                          title: "Session ended", binding: prefBinding(\.sessionEndedEnabled))
+                Divider().background(Theme.Color.separator)
+                toggleRow(icon: "sun.max.fill", tint: Theme.Color.tintAmber,
+                          title: "Daily summary", binding: prefBinding(\.dailySummaryEnabled))
             }
-            .foregroundStyle(Theme.Color.primaryText)
         }
     }
+
+    private func toggleRow(icon: String, tint: Color, title: String, binding: Binding<Bool>) -> some View {
+        HStack(spacing: Theme.Spacing.md) {
+            IconBadge(systemImage: icon, tint: tint, size: 32)
+            Text(title)
+                .font(Theme.Font.callout.weight(.medium))
+                .foregroundStyle(Theme.Color.primaryText)
+            Spacer()
+            Toggle("", isOn: binding)
+                .labelsHidden()
+                .tint(Theme.Color.accent)
+        }
+    }
+
+    // MARK: Remove
 
     private var removeButton: some View {
         Button(role: .destructive) {
@@ -221,24 +328,31 @@ struct TrackedNumberDetailView: View {
             HStack {
                 Image(systemName: "trash")
                 Text("Remove this number")
+                    .font(Theme.Font.headline)
             }
-            .font(.callout.weight(.medium))
             .foregroundStyle(Theme.Color.danger)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, Theme.Spacing.md)
+            .padding(.vertical, 14)
             .background(
-                RoundedRectangle(cornerRadius: Theme.Radius.md)
-                    .stroke(Theme.Color.danger.opacity(0.3), lineWidth: 1)
+                RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
+                    .fill(Theme.Color.danger.opacity(0.10))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
+                    .stroke(Theme.Color.danger.opacity(0.30), lineWidth: 0.5)
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ScalePressStyle())
     }
+
+    // MARK: Helpers
 
     private func prefBinding(_ kp: WritableKeyPath<NotificationPrefs, Bool>) -> Binding<Bool> {
         Binding(
             get: { prefs[keyPath: kp] },
             set: { newValue in
                 prefs[keyPath: kp] = newValue
+                LSAnalytics.shared.log(.notificationPrefChanged(name: prefName(for: kp), enabled: newValue))
                 Task {
                     if let updated = try? await tracking.updatePrefs(for: trackedNumber.id, prefs: prefs) {
                         prefs = updated
@@ -248,19 +362,14 @@ struct TrackedNumberDetailView: View {
         )
     }
 
-    private func liveLabel(_ live: LiveStatus?) -> String {
-        guard let live else { return "Loading..." }
-        if live.isOnline {
-            if let since = live.onlineSince {
-                let secs = Int(Date.now.timeIntervalSince(since))
-                return "Online for \(secs.asDuration)"
-            }
-            return "Online"
+    private func prefName(for kp: WritableKeyPath<NotificationPrefs, Bool>) -> String {
+        switch kp {
+        case \NotificationPrefs.onlineEnabled: return "online"
+        case \NotificationPrefs.offlineEnabled: return "offline"
+        case \NotificationPrefs.sessionEndedEnabled: return "session_ended"
+        case \NotificationPrefs.dailySummaryEnabled: return "daily_summary"
+        default: return "unknown"
         }
-        if let secs = live.lastSeenSecondsAgo {
-            return "Last seen \(secs.asDuration) ago"
-        }
-        return "No activity yet"
     }
 
     private func avgPerSession(_ sessions: SessionsForDay) -> String {
@@ -279,26 +388,7 @@ struct TrackedNumberDetailView: View {
     }
 }
 
-private struct StatChip: View {
-    let title: String
-    let value: String
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title.uppercased())
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(Theme.Color.tertiaryText)
-            Text(value)
-                .font(.title3.monospacedDigit().bold())
-                .foregroundStyle(Theme.Color.primaryText)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Theme.Spacing.md)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .fill(Theme.Color.surfaceElevated)
-        )
-    }
-}
+// MARK: - Date helpers (kept here to avoid touching unrelated files)
 
 extension Date {
     var iso8601Day: String {

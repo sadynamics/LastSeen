@@ -8,11 +8,11 @@ struct MainTabView: View {
     var body: some View {
         TabView {
             TrackedNumbersView()
-                .tabItem { Label("Activity", systemImage: "chart.bar.xaxis") }
+                .tabItem { Label("Activity", systemImage: "waveform.path.ecg") }
 
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gearshape.fill") }
         }
-        .tint(Theme.Color.accent)
+        .tint(Theme.Color.accentLight)
     }
 }

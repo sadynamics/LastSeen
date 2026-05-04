@@ -14,22 +14,25 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Theme.Color.background.ignoresSafeArea()
+                AppBackground()
                 ScrollView {
                     VStack(spacing: Theme.Spacing.lg) {
-                        accountCard
                         subscriptionCard
+                        accountCard
                         legalCard
                         dangerZoneCard
                         Text("LastSeen \(appVersion)")
-                            .font(.caption2)
+                            .font(Theme.Font.caption)
                             .foregroundStyle(Theme.Color.tertiaryText)
                             .padding(.top, Theme.Spacing.md)
                     }
                     .padding(Theme.Spacing.lg)
+                    .padding(.bottom, Theme.Spacing.xxl)
                 }
+                .scrollIndicators(.hidden)
             }
             .navigationTitle("Settings")
+            .toolbarBackground(.hidden, for: .navigationBar)
             .sheet(isPresented: $showingPaywall) {
                 PaywallView()
             }
@@ -41,125 +44,216 @@ struct SettingsView: View {
             } message: {
                 Text("This permanently removes your account and all tracking data.")
             }
+            .trackScreen("settings", className: "SettingsView")
         }
     }
 
-    private var accountCard: some View {
-        Card {
-            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                Text("Account")
-                    .font(.headline)
-                    .foregroundStyle(Theme.Color.primaryText)
-                if case .signedIn(let user) = auth.state {
-                    if let email = user.email {
-                        row(label: "Email", value: email)
-                    }
-                    row(label: "User ID", value: String(user.id.prefix(12)) + "…")
-                }
-            }
-        }
-    }
+    // MARK: Subscription
 
     private var subscriptionCard: some View {
         Card {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 HStack {
-                    Text("Subscription")
-                        .font(.headline)
-                        .foregroundStyle(Theme.Color.primaryText)
+                    HStack(spacing: 10) {
+                        IconBadge(systemImage: subscriptions.isSubscribed ? "checkmark.seal.fill" : "sparkles",
+                                  tint: subscriptions.isSubscribed ? Theme.Color.online : Theme.Color.accent,
+                                  size: 36)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(subscriptions.isSubscribed ? "LastSeen Pro" : "LastSeen Free")
+                                .font(Theme.Font.headline)
+                                .foregroundStyle(Theme.Color.primaryText)
+                            Text(subscriptions.isSubscribed ? "All features unlocked" : "Limited to one tracked number")
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Color.secondaryText)
+                        }
+                    }
                     Spacer()
-                    Text(subscriptions.isSubscribed ? "Active" : "Free")
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(
-                            subscriptions.isSubscribed
-                                ? Theme.Color.online.opacity(0.2)
-                                : Theme.Color.surfaceElevated
-                        ))
-                        .foregroundStyle(subscriptions.isSubscribed ? Theme.Color.online : Theme.Color.secondaryText)
+                    statusBadge
                 }
+
                 if let exp = subscriptions.expiresAt {
-                    row(label: "Renews", value: exp.formatted(date: .abbreviated, time: .omitted))
+                    Divider().background(Theme.Color.separator)
+                    HStack {
+                        Text("Renews")
+                            .font(Theme.Font.callout)
+                            .foregroundStyle(Theme.Color.secondaryText)
+                        Spacer()
+                        Text(exp.formatted(date: .abbreviated, time: .omitted))
+                            .font(Theme.Font.callout.weight(.medium))
+                            .foregroundStyle(Theme.Color.primaryText)
+                    }
                 }
+
                 if subscriptions.isSubscribed {
                     Link(destination: URL(string: "https://apps.apple.com/account/subscriptions")!) {
                         HStack {
                             Text("Manage subscription")
+                                .font(Theme.Font.callout.weight(.medium))
                             Spacer()
                             Image(systemName: "arrow.up.right.square")
                         }
                         .foregroundStyle(Theme.Color.accent)
                     }
+                    .simultaneousGesture(TapGesture().onEnded {
+                        LSAnalytics.shared.log(.settingsLinkTapped(name: "manage_subscription"))
+                    })
                 } else {
-                    PrimaryButton(title: "Upgrade") { showingPaywall = true }
+                    PrimaryButton(title: "Upgrade to Pro", systemImage: "sparkles") {
+                        LSAnalytics.shared.log(.upgradeTapped(source: "settings"))
+                        showingPaywall = true
+                    }
                 }
             }
         }
     }
 
-    private var legalCard: some View {
+    private var statusBadge: some View {
+        let active = subscriptions.isSubscribed
+        return Text(active ? "Active" : "Free")
+            .font(Theme.Font.label)
+            .tracking(0.8)
+            .foregroundStyle(active ? Theme.Color.online : Theme.Color.secondaryText)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(
+                Capsule().fill(active
+                    ? Theme.Color.online.opacity(0.15)
+                    : Color.white.opacity(0.06))
+            )
+            .overlay(
+                Capsule().stroke(active
+                    ? Theme.Color.online.opacity(0.30)
+                    : Color.white.opacity(0.10), lineWidth: 0.5)
+            )
+    }
+
+    // MARK: Account
+
+    private var accountCard: some View {
         Card {
-            VStack(spacing: 0) {
-                linkRow(title: "Privacy policy", url: "https://lastseen.app/privacy")
-                Divider().background(Theme.Color.surfaceElevated)
-                linkRow(title: "Terms of service", url: "https://lastseen.app/terms")
-                Divider().background(Theme.Color.surfaceElevated)
-                linkRow(title: "Support", url: "mailto:support@lastseen.app")
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                SectionHeader(title: "Account")
+                if case .signedIn(let user) = auth.state {
+                    if let email = user.email {
+                        row(label: "Email", value: email, icon: "envelope.fill",
+                            tint: Theme.Color.accentSecondary)
+                    }
+                    Divider().background(Theme.Color.separator)
+                    row(label: "User ID",
+                        value: String(user.id.prefix(12)) + "…",
+                        icon: "person.crop.circle.fill",
+                        tint: Theme.Color.accent)
+                }
             }
         }
     }
 
+    // MARK: Legal
+
+    private var legalCard: some View {
+        Card(padding: 0) {
+            VStack(spacing: 0) {
+                linkRow(title: "Privacy policy", icon: "lock.shield.fill",
+                        tint: Theme.Color.tintMint,
+                        url: "https://lastseen.app/privacy")
+                Divider().background(Theme.Color.separator).padding(.leading, 60)
+                linkRow(title: "Terms of service", icon: "doc.text.fill",
+                        tint: Theme.Color.accent,
+                        url: "https://lastseen.app/terms")
+                Divider().background(Theme.Color.separator).padding(.leading, 60)
+                linkRow(title: "Support", icon: "envelope.fill",
+                        tint: Theme.Color.tintAmber,
+                        url: "mailto:support@lastseen.app")
+            }
+        }
+    }
+
+    // MARK: Danger zone
+
     private var dangerZoneCard: some View {
-        Card {
-            VStack(spacing: Theme.Spacing.md) {
+        Card(padding: 0) {
+            VStack(spacing: 0) {
                 Button {
                     Task { await auth.signOut() }
                 } label: {
-                    HStack {
-                        Image(systemName: "rectangle.portrait.and.arrow.right")
-                        Text("Sign out")
-                        Spacer()
-                    }
-                    .foregroundStyle(Theme.Color.primaryText)
+                    actionRow(title: "Sign out",
+                              icon: "rectangle.portrait.and.arrow.right",
+                              tint: Theme.Color.secondaryText,
+                              destructive: false,
+                              loading: false)
                 }
-                Divider().background(Theme.Color.surfaceElevated)
+                .buttonStyle(.plain)
+                Divider().background(Theme.Color.separator).padding(.leading, 60)
                 Button(role: .destructive) {
                     showingDeleteConfirm = true
                 } label: {
-                    HStack {
-                        Image(systemName: "person.crop.circle.badge.minus")
-                        Text("Delete account")
-                        Spacer()
-                        if isDeleting { ProgressView().tint(Theme.Color.danger) }
-                    }
-                    .foregroundStyle(Theme.Color.danger)
+                    actionRow(title: "Delete account",
+                              icon: "person.crop.circle.badge.minus",
+                              tint: Theme.Color.danger,
+                              destructive: true,
+                              loading: isDeleting)
                 }
+                .buttonStyle(.plain)
             }
         }
     }
 
-    private func row(label: String, value: String) -> some View {
-        HStack {
-            Text(label).foregroundStyle(Theme.Color.secondaryText)
+    // MARK: Row helpers
+
+    private func row(label: String, value: String, icon: String, tint: Color) -> some View {
+        HStack(spacing: Theme.Spacing.md) {
+            IconBadge(systemImage: icon, tint: tint, size: 32)
+            Text(label)
+                .font(Theme.Font.callout)
+                .foregroundStyle(Theme.Color.secondaryText)
             Spacer()
             Text(value)
+                .font(Theme.Font.callout.weight(.medium))
                 .foregroundStyle(Theme.Color.primaryText)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
-        .font(.callout)
     }
 
-    private func linkRow(title: String, url: String) -> some View {
+    private func linkRow(title: String, icon: String, tint: Color, url: String) -> some View {
         Link(destination: URL(string: url)!) {
-            HStack {
-                Text(title).foregroundStyle(Theme.Color.primaryText)
+            HStack(spacing: Theme.Spacing.md) {
+                IconBadge(systemImage: icon, tint: tint, size: 32)
+                Text(title)
+                    .font(Theme.Font.callout.weight(.medium))
+                    .foregroundStyle(Theme.Color.primaryText)
                 Spacer()
-                Image(systemName: "chevron.right").foregroundStyle(Theme.Color.tertiaryText)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.Color.tertiaryText)
             }
-            .padding(.vertical, Theme.Spacing.sm)
+            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.vertical, 14)
         }
+        .simultaneousGesture(TapGesture().onEnded {
+            LSAnalytics.shared.log(.settingsLinkTapped(name: title.lowercased().replacingOccurrences(of: " ", with: "_")))
+        })
+    }
+
+    private func actionRow(title: String, icon: String, tint: Color, destructive: Bool, loading: Bool) -> some View {
+        HStack(spacing: Theme.Spacing.md) {
+            IconBadge(systemImage: icon,
+                      tint: destructive ? Theme.Color.danger : Theme.Color.secondaryText,
+                      size: 32)
+            Text(title)
+                .font(Theme.Font.callout.weight(.medium))
+                .foregroundStyle(destructive ? Theme.Color.danger : Theme.Color.primaryText)
+            Spacer()
+            if loading {
+                ProgressView().tint(tint)
+            } else {
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.Color.tertiaryText)
+            }
+        }
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.vertical, 14)
     }
 
     private func deleteAccount() async {

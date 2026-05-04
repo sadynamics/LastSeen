@@ -22,84 +22,101 @@ struct AddNumberView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Theme.Color.background.ignoresSafeArea()
+                AppBackground()
                 ScrollView {
                     VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                        Text("Track a phone number")
-                            .font(.title2.bold())
-                            .foregroundStyle(Theme.Color.primaryText)
-                        Text("Enter the WhatsApp number you want to monitor. We'll notify you when it comes online.")
-                            .font(.callout)
-                            .foregroundStyle(Theme.Color.secondaryText)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Track a phone number")
+                                .font(Theme.Font.title)
+                                .foregroundStyle(Theme.Color.primaryText)
+                            Text("Enter the WhatsApp number you want to monitor. We'll notify you when activity changes.")
+                                .font(Theme.Font.callout)
+                                .foregroundStyle(Theme.Color.secondaryText)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(.top, Theme.Spacing.sm)
 
                         Card {
                             VStack(spacing: Theme.Spacing.md) {
                                 Button { showCountryPicker = true } label: {
-                                    HStack {
+                                    HStack(spacing: Theme.Spacing.md) {
                                         Text(country.flag)
-                                            .font(.title2)
-                                        VStack(alignment: .leading) {
+                                            .font(.title)
+                                        VStack(alignment: .leading, spacing: 2) {
                                             Text(country.name)
-                                                .font(.callout)
+                                                .font(Theme.Font.callout.weight(.medium))
                                                 .foregroundStyle(Theme.Color.primaryText)
                                             Text("+\(country.dialCode)")
-                                                .font(.caption)
+                                                .font(Theme.Font.caption)
                                                 .foregroundStyle(Theme.Color.secondaryText)
                                         }
                                         Spacer()
-                                        Image(systemName: "chevron.down")
+                                        Image(systemName: "chevron.up.chevron.down")
+                                            .font(.caption.weight(.semibold))
                                             .foregroundStyle(Theme.Color.tertiaryText)
                                     }
                                 }
                                 .buttonStyle(.plain)
 
-                                Divider().background(Theme.Color.surfaceElevated)
+                                Divider().background(Theme.Color.separator)
 
-                                HStack {
+                                HStack(spacing: 10) {
                                     Text("+\(country.dialCode)")
+                                        .font(Theme.Font.body.weight(.medium))
                                         .foregroundStyle(Theme.Color.primaryText)
                                         .monospacedDigit()
-                                    TextField("Phone number", text: $number)
+                                    TextField("", text: $number, prompt: Text("Phone number")
+                                        .foregroundColor(Theme.Color.tertiaryText))
                                         .keyboardType(.phonePad)
+                                        .font(Theme.Font.body)
                                         .foregroundStyle(Theme.Color.primaryText)
                                         .autocorrectionDisabled()
                                         .textContentType(.telephoneNumber)
                                 }
 
-                                Divider().background(Theme.Color.surfaceElevated)
+                                Divider().background(Theme.Color.separator)
 
-                                TextField("Nickname (optional)", text: $displayName)
+                                TextField("", text: $displayName, prompt: Text("Nickname (optional)")
+                                    .foregroundColor(Theme.Color.tertiaryText))
+                                    .font(Theme.Font.body)
                                     .foregroundStyle(Theme.Color.primaryText)
                                     .textContentType(.name)
                             }
                         }
 
                         if let errorMessage {
-                            Text(errorMessage)
-                                .font(.caption)
-                                .foregroundStyle(Theme.Color.danger)
+                            HStack(spacing: 8) {
+                                Image(systemName: "exclamationmark.circle.fill")
+                                Text(errorMessage)
+                            }
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Color.danger)
                         }
 
-                        Spacer().frame(height: Theme.Spacing.md)
+                        Spacer().frame(height: Theme.Spacing.sm)
 
-                        PrimaryButton(title: "Start tracking", systemImage: "eye.fill",
+                        PrimaryButton(title: "Start tracking", systemImage: "waveform.path.ecg",
                                       isLoading: isSubmitting,
                                       isDisabled: !canSubmit) {
                             Task { await submit() }
                         }
                     }
                     .padding(Theme.Spacing.lg)
+                    .padding(.bottom, Theme.Spacing.xxl)
                 }
+                .scrollIndicators(.hidden)
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }
+                        .font(Theme.Font.callout.weight(.medium))
                         .foregroundStyle(Theme.Color.secondaryText)
                 }
             }
             .sheet(isPresented: $showCountryPicker) {
                 CountryPicker(selected: $country)
             }
+            .trackScreen("add_number", className: "AddNumberView")
         }
     }
 
@@ -189,26 +206,33 @@ struct CountryPicker: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                ForEach(filtered) { c in
-                    Button {
-                        selected = c
-                        dismiss()
-                    } label: {
-                        HStack {
-                            Text(c.flag).font(.title3)
-                            Text(c.name).foregroundStyle(Theme.Color.primaryText)
-                            Spacer()
-                            Text("+\(c.dialCode)")
-                                .foregroundStyle(Theme.Color.tertiaryText)
-                                .monospacedDigit()
+            ZStack {
+                AppBackground()
+                List {
+                    ForEach(filtered) { c in
+                        Button {
+                            selected = c
+                            dismiss()
+                        } label: {
+                            HStack(spacing: Theme.Spacing.md) {
+                                Text(c.flag).font(.title2)
+                                Text(c.name)
+                                    .font(Theme.Font.callout)
+                                    .foregroundStyle(Theme.Color.primaryText)
+                                Spacer()
+                                Text("+\(c.dialCode)")
+                                    .font(Theme.Font.callout.weight(.medium))
+                                    .foregroundStyle(Theme.Color.tertiaryText)
+                                    .monospacedDigit()
+                            }
+                            .padding(.vertical, 4)
                         }
+                        .listRowBackground(Color.white.opacity(0.04))
+                        .listRowSeparatorTint(Theme.Color.separator)
                     }
-                    .listRowBackground(Theme.Color.surface)
                 }
+                .scrollContentBackground(.hidden)
             }
-            .scrollContentBackground(.hidden)
-            .background(Theme.Color.background)
             .searchable(text: $search, prompt: "Search country")
             .navigationTitle("Country")
             .navigationBarTitleDisplayMode(.inline)
