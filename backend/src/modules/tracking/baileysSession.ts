@@ -84,6 +84,7 @@ export class BaileysSession extends EventEmitter {
   private subscribed = new Set<string>();
   private reconnectAttempts = 0;
   private resolveQr: ((qr: string) => void) | null = null;
+  private presenceKeepalive: NodeJS.Timeout | null = null;
 
   constructor(opts: BaileysSessionOptions) {
     super();
@@ -118,7 +119,10 @@ export class BaileysSession extends EventEmitter {
       browser: Browsers.macOS('Desktop'),
       logger: this.log.child({ baileys: true }) as unknown as pino.Logger,
       syncFullHistory: false,
-      markOnlineOnConnect: false,
+      // CRITICAL: must be `true` for WhatsApp to push presence.update events.
+      // When the scraper appears offline, WA's server stops fanning out
+      // presence to "inactive" clients and presenceSubscribe is a no-op.
+      markOnlineOnConnect: true,
       generateHighQualityLinkPreview: false,
       shouldIgnoreJid: (jid) => {
         // Ignore broadcast / status / newsletter to keep the socket quiet.
@@ -137,6 +141,7 @@ export class BaileysSession extends EventEmitter {
   }
 
   async disconnect(): Promise<void> {
+    this.stopPresenceKeepalive();
     try {
       await this.sock?.logout().catch(() => undefined);
     } finally {
@@ -235,10 +240,12 @@ export class BaileysSession extends EventEmitter {
       this.reconnectAttempts = 0;
       this.setStatus('open');
       this.emit('paired');
+      void this.startPresenceKeepalive();
       void this.resubscribeAll();
     }
 
     if (connection === 'close') {
+      this.stopPresenceKeepalive();
       const boom = lastDisconnect?.error as Boom | undefined;
       const statusCode = boom?.output?.statusCode;
       // DisconnectReason is a numeric enum; reverse lookup gives the name.
@@ -291,6 +298,38 @@ export class BaileysSession extends EventEmitter {
       } catch (err) {
         this.log.warn({ err, jid }, 'resubscribe failed');
       }
+    }
+  }
+
+  /**
+   * Keep this scraper marked as "available" on WhatsApp's server. WA throttles
+   * (and eventually drops) presence.update fan-out to clients that look idle,
+   * so we re-assert availability + re-subscribe every 10 minutes.
+   *
+   * This is the standard pattern used by every WhatsApp tracker built on top
+   * of Baileys / WhatsApp Web.
+   */
+  private async startPresenceKeepalive(): Promise<void> {
+    if (this.presenceKeepalive) clearInterval(this.presenceKeepalive);
+    const tick = async (): Promise<void> => {
+      if (!this.sock || this.status !== 'open') return;
+      try {
+        await this.sock.sendPresenceUpdate('available');
+        for (const jid of this.subscribed) {
+          await this.sock.presenceSubscribe(jid).catch(() => undefined);
+        }
+      } catch (err) {
+        this.log.warn({ err }, 'presence keepalive tick failed');
+      }
+    };
+    await tick();
+    this.presenceKeepalive = setInterval(() => void tick(), 10 * 60 * 1000);
+  }
+
+  private stopPresenceKeepalive(): void {
+    if (this.presenceKeepalive) {
+      clearInterval(this.presenceKeepalive);
+      this.presenceKeepalive = null;
     }
   }
 
