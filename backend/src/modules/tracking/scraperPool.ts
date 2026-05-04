@@ -169,16 +169,39 @@ export class ScraperPool {
   private async onPaired(scraperId: string, session: BaileysSession): Promise<void> {
     const phoneJid = session['sock']?.user?.id; // TS-friendly via private peek
     const e164 = phoneJid ? '+' + phoneJid.split('@')[0]!.split(':')[0]! : null;
-    await prisma.scraperAccount.update({
+
+    // Distinguish a *first* pair from a reconnect of an already-paired account.
+    // Only first pairs should trigger the WARMING cooldown — otherwise every
+    // worker restart would reset the warmup clock indefinitely.
+    const existing = await prisma.scraperAccount.findUnique({
       where: { id: scraperId },
-      data: {
-        status: 'WARMING',
-        warmupUntil: new Date(Date.now() + 1000 * 60 * 60 * 24), // 24h warm-up
-        lastHeartbeat: new Date(),
-        jid: phoneJid ?? null,
-        phoneE164: e164,
-      },
+      select: { status: true, jid: true, warmupUntil: true },
     });
+    const isFirstPair = !existing?.jid || existing.status === 'PAIRING';
+
+    if (isFirstPair) {
+      await prisma.scraperAccount.update({
+        where: { id: scraperId },
+        data: {
+          status: 'WARMING',
+          warmupUntil: new Date(Date.now() + 1000 * 60 * 60 * 24),
+          lastHeartbeat: new Date(),
+          jid: phoneJid ?? null,
+          phoneE164: e164,
+        },
+      });
+    } else {
+      // Reconnect: keep existing status (HEALTHY / WARMING / COOLING),
+      // just refresh the heartbeat and identity fields.
+      await prisma.scraperAccount.update({
+        where: { id: scraperId },
+        data: {
+          lastHeartbeat: new Date(),
+          jid: phoneJid ?? existing.jid ?? null,
+          phoneE164: e164 ?? undefined,
+        },
+      });
+    }
     // Re-subscribe to all existing tracked numbers assigned to this scraper.
     const tracked = await prisma.trackedNumber.findMany({
       where: { scraperAccountId: scraperId, archivedAt: null, jid: { not: null } },
