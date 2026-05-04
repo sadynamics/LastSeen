@@ -118,14 +118,15 @@ const routes: FastifyPluginAsync = async (app) => {
   });
 
   /**
-   * Re-enqueue every active tracked number that has no scraper assigned, or
-   * is assigned to a non-HEALTHY scraper. Useful after a scraper ban/promotion.
+   * Re-enqueue every active tracked number. Subscribe is idempotent on the
+   * Baileys side, so this is safe to call any time. Also promotes any
+   * WARMING scrapers whose cooldown has expired and detaches numbers stuck
+   * on retired/banned scrapers so they can be reassigned.
    */
   app.post('/admin/scrapers/reconcile', async (_req, reply) => {
     const { scraperPool } = await import('../../modules/tracking/scraperPool.js');
     const promoted = await scraperPool.promoteReadyScrapers();
 
-    // Detach numbers stuck on retired/banned scrapers so they can be reassigned.
     const detach = await prisma.trackedNumber.updateMany({
       where: {
         archivedAt: null,
@@ -134,14 +135,14 @@ const routes: FastifyPluginAsync = async (app) => {
       data: { scraperAccountId: null },
     });
 
-    const orphans = await prisma.trackedNumber.findMany({
-      where: { archivedAt: null, scraperAccountId: null },
+    const all = await prisma.trackedNumber.findMany({
+      where: { archivedAt: null },
       select: { id: true },
     });
-    for (const o of orphans) {
-      await trackingQueue().add('track', { type: 'track', trackedNumberId: o.id });
+    for (const t of all) {
+      await trackingQueue().add('track', { type: 'track', trackedNumberId: t.id });
     }
-    return reply.send({ promoted, detached: detach.count, requeued: orphans.length });
+    return reply.send({ promoted, detached: detach.count, requeued: all.length });
   });
 
   app.delete('/admin/scrapers/:id', async (req, reply) => {
