@@ -1,5 +1,5 @@
 import { Worker } from 'bullmq';
-import { createRedisConnection, getRedis } from '../config/redis.js';
+import { createRedisConnection } from '../config/redis.js';
 import { logger } from '../config/logger.js';
 import { prisma } from '../config/prisma.js';
 import { scraperPool } from '../modules/tracking/scraperPool.js';
@@ -9,9 +9,6 @@ import { QUEUE_TRACKING, type TrackingJob } from '../modules/tracking/queues.js'
 const log = logger.child({ worker: 'tracking' });
 
 export function startTrackingWorker(): Worker<TrackingJob> {
-  const redis = getRedis();
-
-  // Forward QR codes from Baileys sessions to a Redis key the API can read.
   scraperPool.setPresenceHandler((ev) => {
     void ingestPresence(ev).catch((err) => log.error({ err, ev }, 'ingest failed'));
   });
@@ -24,13 +21,10 @@ export function startTrackingWorker(): Worker<TrackingJob> {
         case 'pair': {
           const acc = await prisma.scraperAccount.findUnique({ where: { id: data.scraperAccountId } });
           if (!acc) return;
-          const session = await scraperPool.start(acc);
-          session.on('qr', (qr) => {
-            void redis.set(`scraper:${acc.id}:qr`, qr, 'EX', 120);
-          });
-          session.on('paired', () => {
-            void redis.del(`scraper:${acc.id}:qr`);
-          });
+          // QR + paired listeners are attached inside scraperPool.start()
+          // so they fire on bootstrap-triggered starts too, not just on the
+          // explicit pair job.
+          await scraperPool.start(acc);
           return;
         }
         case 'track': {

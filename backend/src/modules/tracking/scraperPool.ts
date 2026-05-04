@@ -2,6 +2,7 @@ import { ulid } from 'ulidx';
 import { prisma } from '../../config/prisma.js';
 import { logger } from '../../config/logger.js';
 import { env } from '../../config/env.js';
+import { getRedis } from '../../config/redis.js';
 import { BaileysSession } from './baileysSession.js';
 import type { ScraperAccount } from '@prisma/client';
 
@@ -58,7 +59,17 @@ export class ScraperPool {
       bucket: env.S3_BUCKET_BAILEYS,
     });
 
+    session.on('qr', (qr) => {
+      const redis = getRedis();
+      void redis
+        .set(`scraper:${acc.id}:qr`, qr, 'EX', 120)
+        .catch((err) => log.error({ err, scraperId: acc.id }, 'failed to cache QR'));
+      log.info({ scraperId: acc.id }, 'QR emitted; cached for 120s');
+    });
+
     session.on('paired', () => {
+      const redis = getRedis();
+      void redis.del(`scraper:${acc.id}:qr`).catch(() => undefined);
       void this.onPaired(acc.id, session);
     });
 
