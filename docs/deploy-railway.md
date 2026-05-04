@@ -174,6 +174,32 @@ The handler is in [`backend/src/api/routes/billing.ts`](../backend/src/api/route
 
 ---
 
+## 8b) Firebase Admin (Firestore customer mirror) — optional
+
+The backend can mirror customer rows + purchases to Firestore so you have a CRM-style view of every signup, subscription, and refund alongside the data Firebase Analytics already collects. Skipping this is fine for a first deploy — leave the env vars blank and the sync gracefully no-ops.
+
+1. <https://console.firebase.google.com> → your project → **Project Settings → Service accounts**
+2. Click **Generate new private key** → confirm → a JSON file downloads
+3. Open the JSON, copy these three fields into the Railway **api** service variables:
+
+   | Railway env var | JSON field |
+   | --- | --- |
+   | `FIREBASE_PROJECT_ID` | `project_id` |
+   | `FIREBASE_CLIENT_EMAIL` | `client_email` |
+   | `FIREBASE_PRIVATE_KEY` | `private_key` (paste the full string with literal `\n` between lines — Railway preserves them, the backend converts them at boot) |
+
+4. (Optional) In the Firebase console → **Build → Firestore Database** → **Create database** in **production mode** if you haven't already. Pick the region nearest your Railway region.
+5. Redeploy the API service. Look for `firebase admin initialised` in the logs.
+6. Verify by signing in once from the iOS app, then in Firebase Console → Firestore → `users/<userId>` should have a fresh document with `email`, `appleSub`, `lastSignInAt`, etc.
+
+What gets written:
+- `users/{userId}`: `appleSub`, `email`, `locale`, `createdAt`, `lastSignInAt`, `deletedAt`, `trackedCount`, `subscription` (snapshot of current subscription).
+- `users/{userId}/purchases/{originalTransactionId}`: every transaction Apple sends, including renewals, cancellations, refunds. Updated by both the iOS-initiated `/v1/billing/verify` call and Apple's S2S notifications.
+
+The sync is fire-and-forget: a Firebase outage or quota error never blocks an API response.
+
+---
+
 ## 9) Verify the deploy
 
 ```bash

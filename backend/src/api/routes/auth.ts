@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../../config/prisma.js';
 import { issueSessionJwt, verifyAppleIdentityToken } from '../../modules/auth/apple.js';
+import { upsertUser } from '../../modules/sync/firestoreSync.js';
 
 const SignInBody = z.object({
   identityToken: z.string().min(10),
@@ -35,6 +36,16 @@ const routes: FastifyPluginAsync = async (app) => {
     });
 
     const token = await issueSessionJwt({ sub: user.id, appleSub: verified.sub });
+
+    // Mirror customer to Firestore (fire-and-forget — never blocks the response).
+    void upsertUser(user.id, {
+      appleSub: verified.sub,
+      email: user.email,
+      locale: user.locale,
+      createdAt: user.createdAt,
+      lastSignInAt: new Date(),
+    });
+
     return reply.send({
       token,
       user: { id: user.id, email: user.email, createdAt: user.createdAt.toISOString() },

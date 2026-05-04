@@ -42,6 +42,12 @@ const schema = z.object({
 
   SENTRY_DSN: z.string().optional().default(''),
   SENTRY_ENVIRONMENT: z.string().optional(),
+
+  // Firebase Admin SDK (Firestore mirror). All three must be set together
+  // for the sync to activate; otherwise it gracefully no-ops.
+  FIREBASE_PROJECT_ID: z.string().optional().default(''),
+  FIREBASE_CLIENT_EMAIL: z.string().optional().default(''),
+  FIREBASE_PRIVATE_KEY: z.string().optional().default(''),
 });
 
 export type Env = z.infer<typeof schema>;

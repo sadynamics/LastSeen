@@ -11,6 +11,7 @@ import { Prisma, type SubscriptionStatus, type AppleEnvironment } from '@prisma/
 import { env } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
 import { prisma } from '../../config/prisma.js';
+import { updateSubscription } from '../sync/firestoreSync.js';
 
 const log = logger.child({ mod: 'appstore' });
 
@@ -99,6 +100,18 @@ export async function verifyTransaction(userId: string, signedTransaction: strin
       expiresAt,
       rawJws: signedTransaction,
     },
+  });
+
+  // Mirror to Firestore (fire-and-forget).
+  void updateSubscription(userId, {
+    originalTransactionId: decoded.originalTransactionId,
+    latestTransactionId: decoded.transactionId ?? decoded.originalTransactionId,
+    productId: decoded.productId,
+    status,
+    environment,
+    purchaseDate,
+    expiresAt,
+    autoRenewEnabled: true,
   });
 
   return {
@@ -192,7 +205,7 @@ async function applyTxToSubscription(
     return;
   }
 
-  await prisma.subscription.update({
+  const updated = await prisma.subscription.update({
     where: { originalTransactionId: tx.originalTransactionId },
     data: {
       productId: tx.productId,
@@ -205,6 +218,19 @@ async function applyTxToSubscription(
       cancellationReason: tx.revocationReason != null ? String(tx.revocationReason) : null,
       environment: env,
     },
+  });
+
+  void updateSubscription(updated.userId, {
+    originalTransactionId: updated.originalTransactionId,
+    latestTransactionId: updated.latestTransactionId,
+    productId: updated.productId,
+    status: updated.status,
+    environment: updated.environment,
+    purchaseDate: updated.purchaseDate,
+    expiresAt: updated.expiresAt,
+    autoRenewEnabled: updated.autoRenewEnabled,
+    cancellationDate: updated.cancellationDate,
+    cancellationReason: updated.cancellationReason,
   });
 }
 

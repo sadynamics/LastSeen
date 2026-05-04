@@ -11,6 +11,7 @@ import { ZodError } from 'zod';
 import { env, isProduction } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { initSentry, sentry } from '../config/sentry.js';
+import { initFirebase } from '../config/firebase.js';
 import authPlugin from './plugins/auth.js';
 import authRoutes from './routes/auth.js';
 import devicesRoutes from './routes/devices.js';
@@ -94,6 +95,7 @@ export async function buildApp() {
 
 async function main(): Promise<void> {
   initSentry();
+  initFirebase();
   const app = await buildApp();
   try {
     await app.listen({ host: '0.0.0.0', port: env.PORT });

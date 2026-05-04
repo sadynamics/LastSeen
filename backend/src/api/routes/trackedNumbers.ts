@@ -6,6 +6,7 @@ import { trackingQueue } from '../../modules/tracking/queues.js';
 import { liveStatus, sessionsForDay, weeklyReport } from '../../modules/reports/queries.js';
 import { NotFoundError, PaymentRequiredError } from '../../lib/errors.js';
 import { userHasActiveSubscription } from '../../modules/billing/appstore.js';
+import { setTrackedCount } from '../../modules/sync/firestoreSync.js';
 
 const FREE_TIER_LIMIT = 1;
 
@@ -72,6 +73,9 @@ const routes: FastifyPluginAsync = async (app) => {
     });
 
     await trackingQueue().add('track', { type: 'track', trackedNumberId: tracked.id });
+
+    void syncTrackedCount(userId);
+
     return reply.code(201).send({ item: tracked });
   });
 
@@ -92,6 +96,9 @@ const routes: FastifyPluginAsync = async (app) => {
       jid: existing.jid,
       scraperAccountId: existing.scraperAccountId,
     });
+
+    void syncTrackedCount(userId);
+
     return reply.code(204).send();
   });
 
@@ -140,5 +147,17 @@ const routes: FastifyPluginAsync = async (app) => {
     return { prefs };
   });
 };
+
+/**
+ * Recompute the user's active tracked-number count and mirror it to Firestore.
+ * Always uses an authoritative DB count instead of incrementing so eventual
+ * consistency is preserved even if a sync write was lost.
+ */
+async function syncTrackedCount(userId: string): Promise<void> {
+  const count = await prisma.trackedNumber.count({
+    where: { userId, archivedAt: null },
+  });
+  await setTrackedCount(userId, count);
+}
 
 export default routes;

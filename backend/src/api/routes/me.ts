@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { prisma } from '../../config/prisma.js';
+import { markUserDeleted } from '../../modules/sync/firestoreSync.js';
 
 const routes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', app.requireAuth);
@@ -53,6 +54,9 @@ const routes: FastifyPluginAsync = async (app) => {
       where: { userId, archivedAt: null },
       data: { archivedAt: new Date() },
     });
+
+    void markUserDeleted(userId);
+
     return reply.code(204).send();
   });
 };
