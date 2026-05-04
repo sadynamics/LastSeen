@@ -200,8 +200,18 @@ export class BaileysSession extends EventEmitter {
   async subscribe(jid: string): Promise<void> {
     if (!this.sock) throw new Error('Session not connected');
     if (this.subscribed.has(jid)) return;
+
+    // Skip the scraper's own number — WhatsApp never broadcasts presence
+    // for yourself, so subscribing is a guaranteed dead end.
+    const ownJid = this.sock.user?.id;
+    if (ownJid && normalizeJid(jid) === normalizeJid(ownJid)) {
+      this.log.warn({ jid }, 'skipping subscribe to scraper own jid');
+      return;
+    }
+
     await this.sock.presenceSubscribe(jid);
     this.subscribed.add(jid);
+    this.log.info({ jid }, 'presence subscribed');
   }
 
   /** Unsubscribe locally; Baileys has no explicit unsubscribe over the wire. */
@@ -279,7 +289,11 @@ export class BaileysSession extends EventEmitter {
   }): void {
     for (const [jid, p] of Object.entries(u.presences)) {
       const status = p.lastKnownPresence;
-      if (!status) continue;
+      if (!status) {
+        this.log.info({ jid, raw: p }, 'presence update without status');
+        continue;
+      }
+      this.log.info({ jid, status, lastSeen: p.lastSeen }, 'presence event received');
       this.emit('presence', {
         scraperId: this.scraperId,
         jid,
@@ -395,6 +409,13 @@ export class BaileysSession extends EventEmitter {
 
     return { state, saveCreds };
   }
+}
+
+/** Strip the device suffix (`:<n>`) WhatsApp adds to multi-device JIDs. */
+function normalizeJid(jid: string): string {
+  const [user, server] = jid.split('@');
+  if (!user || !server) return jid;
+  return `${user.split(':')[0]}@${server}`;
 }
 
 // JSON serialization helpers for Buffers (Baileys auth state contains many).

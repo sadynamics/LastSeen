@@ -85,5 +85,5 @@ export async function ingestPresence(ev: PresenceEventPayload): Promise<void> {
     { jobId: `rollup-${tracked.id}-${day}`, delay: 30_000 }, // debounce
   );
 
-  log.debug({ trackedNumberId: tracked.id, status: mapped }, 'ingested presence');
+  log.info({ trackedNumberId: tracked.id, status: mapped }, 'ingested presence');
 }
