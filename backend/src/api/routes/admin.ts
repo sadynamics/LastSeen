@@ -96,6 +96,54 @@ const routes: FastifyPluginAsync = async (app) => {
     return reply.code(202).send({ ok: true });
   });
 
+  /**
+   * Force a scraper out of WARMING into HEALTHY immediately. Use to bypass
+   * the 24h cooldown when you need to test or want to ship faster.
+   */
+  app.post('/admin/scrapers/:id/promote', async (req, reply) => {
+    const params = z.object({ id: z.string() }).parse(req.params);
+    const { scraperPool } = await import('../../modules/tracking/scraperPool.js');
+    const updated = await scraperPool.forcePromote(params.id);
+    if (!updated) return reply.code(404).send({ error: 'not found' });
+
+    // Kick the worker so any orphan tracked numbers get picked up immediately.
+    const orphans = await prisma.trackedNumber.findMany({
+      where: { archivedAt: null, scraperAccountId: null },
+      select: { id: true },
+    });
+    for (const o of orphans) {
+      await trackingQueue().add('track', { type: 'track', trackedNumberId: o.id });
+    }
+    return reply.send({ item: updated, reattached: orphans.length });
+  });
+
+  /**
+   * Re-enqueue every active tracked number that has no scraper assigned, or
+   * is assigned to a non-HEALTHY scraper. Useful after a scraper ban/promotion.
+   */
+  app.post('/admin/scrapers/reconcile', async (_req, reply) => {
+    const { scraperPool } = await import('../../modules/tracking/scraperPool.js');
+    const promoted = await scraperPool.promoteReadyScrapers();
+
+    // Detach numbers stuck on retired/banned scrapers so they can be reassigned.
+    const detach = await prisma.trackedNumber.updateMany({
+      where: {
+        archivedAt: null,
+        scraperAccount: { status: { in: ['RETIRED', 'BANNED'] } },
+      },
+      data: { scraperAccountId: null },
+    });
+
+    const orphans = await prisma.trackedNumber.findMany({
+      where: { archivedAt: null, scraperAccountId: null },
+      select: { id: true },
+    });
+    for (const o of orphans) {
+      await trackingQueue().add('track', { type: 'track', trackedNumberId: o.id });
+    }
+    return reply.send({ promoted, detached: detach.count, requeued: orphans.length });
+  });
+
   app.delete('/admin/scrapers/:id', async (req, reply) => {
     const params = z.object({ id: z.string() }).parse(req.params);
     await prisma.scraperAccount.update({

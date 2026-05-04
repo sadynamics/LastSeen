@@ -106,6 +106,11 @@ export class ScraperPool {
    * lastHeartbeat to spread load.
    */
   async assignScraper(): Promise<ScraperAccount | null> {
+    // Promote any WARMING accounts whose warmup window has expired before
+    // we filter for HEALTHY ones, so newly-paired scrapers automatically
+    // become assignable as soon as their cooldown ends.
+    await this.promoteReadyScrapers();
+
     const candidates = await prisma.scraperAccount.findMany({
       where: { status: 'HEALTHY' },
       include: { _count: { select: { trackedNumbers: { where: { archivedAt: null } } } } },
@@ -116,6 +121,37 @@ export class ScraperPool {
       .filter((c) => c.free > 0)
       .sort((a, b) => b.free - a.free);
     return ranked[0]?.acc ?? null;
+  }
+
+  /**
+   * Flip any WARMING scrapers whose `warmupUntil` has passed to HEALTHY.
+   * Cheap idempotent maintenance; safe to call frequently.
+   */
+  async promoteReadyScrapers(): Promise<number> {
+    const result = await prisma.scraperAccount.updateMany({
+      where: {
+        status: 'WARMING',
+        OR: [{ warmupUntil: null }, { warmupUntil: { lte: new Date() } }],
+      },
+      data: { status: 'HEALTHY' },
+    });
+    if (result.count > 0) {
+      log.info({ promoted: result.count }, 'promoted scrapers WARMING -> HEALTHY');
+    }
+    return result.count;
+  }
+
+  /**
+   * Force a specific scraper to HEALTHY immediately, bypassing warmup.
+   * Used by the admin endpoint when you need to test right away.
+   */
+  async forcePromote(scraperId: string): Promise<ScraperAccount | null> {
+    const updated = await prisma.scraperAccount.update({
+      where: { id: scraperId },
+      data: { status: 'HEALTHY', warmupUntil: null },
+    });
+    log.info({ scraperId }, 'force-promoted scraper to HEALTHY');
+    return updated;
   }
 
   async stop(scraperId: string): Promise<void> {
