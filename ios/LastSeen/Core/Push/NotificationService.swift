@@ -44,9 +44,27 @@ final class NotificationService: NSObject {
     func start() async {
         UNUserNotificationCenter.current().delegate = self
         await refreshAuthorizationStatus()
+        // If the AppDelegate received a token before the SwiftUI listener
+        // attached (a launch-time race), pick it up now.
+        await pullPendingTokenIfAny()
         if authorizationStatus == .authorized || authorizationStatus == .provisional || authorizationStatus == .ephemeral {
             await registerForRemoteNotifications()
+            // Re-poll in 2s in case iOS hands the token to AppDelegate before
+            // the NotificationCenter publisher has subscribed.
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            await pullPendingTokenIfAny()
         }
+    }
+
+    /// Reads `AppDelegate.pendingToken`, which is the most-recent token iOS
+    /// has handed our process. Posting through NotificationCenter can race
+    /// against listener subscription on cold launches; this is a belt-and-
+    /// braces backup. Idempotent.
+    func pullPendingTokenIfAny() async {
+        guard let data = AppDelegate.pendingToken else { return }
+        let hex = data.map { String(format: "%02x", $0) }.joined()
+        if apnsToken == hex { return }
+        await handleAPNsToken(data)
     }
 
     func refreshAuthorizationStatus() async {

@@ -12,7 +12,7 @@ import Combine
 
 /// Bumped whenever the diagnostics UI changes meaningfully so we can confirm
 /// over screen-share that the latest build is running on the device.
-private let diagnosticsBuildMarker = "v5 · 2026-05-05"
+private let diagnosticsBuildMarker = "v6 · 2026-05-05"
 
 struct PushDiagnosticsView: View {
     @Environment(NotificationService.self) private var notifications
@@ -92,6 +92,9 @@ struct PushDiagnosticsView: View {
                 Divider().background(Theme.Color.separator)
                 row("APNs token",
                     value: notifications.apnsToken.map { String($0.prefix(10)) + "…" } ?? "Not received yet")
+                Divider().background(Theme.Color.separator)
+                row("AppDelegate pendingToken",
+                    value: AppDelegate.pendingToken == nil ? "nil" : "set (\(AppDelegate.pendingToken!.count) bytes)")
                 Divider().background(Theme.Color.separator)
                 row("Backend registered", value: notifications.isRegistered ? "Yes" : "No")
                 Divider().background(Theme.Color.separator)
@@ -209,12 +212,19 @@ struct PushDiagnosticsView: View {
                                 systemImage: "arrow.clockwise") {
                     Task {
                         await notifications.registerForRemoteNotifications()
-                        try? await Task.sleep(nanoseconds: 1_500_000_000)
+                        // Poll for up to 8 seconds, picking up the token via
+                        // AppDelegate.pendingToken even if the
+                        // NotificationCenter listener races us.
+                        for _ in 0..<8 {
+                            try? await Task.sleep(nanoseconds: 1_000_000_000)
+                            await notifications.pullPendingTokenIfAny()
+                            if notifications.apnsToken != nil { break }
+                        }
                         await notifications.syncDeviceIfPossible()
                         lastAction = notifications.isRegistered
                             ? "Device registered with server."
                             : (notifications.apnsToken == nil
-                               ? "iOS hasn't returned a token yet. Try again in a few seconds."
+                               ? "iOS hasn't returned a token after 8s. Likely the network is blocking APNs (port 5223). Try cellular."
                                : "Token received but server registration failed.")
                     }
                 }

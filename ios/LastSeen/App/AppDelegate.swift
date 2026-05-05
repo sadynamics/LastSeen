@@ -28,6 +28,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
     func application(_ application: UIApplication,
                      didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        let hex = deviceToken.map { String(format: "%02x", $0) }.joined()
+        print("[APNS] didRegisterForRemoteNotifications token=\(hex.prefix(12))…")
         Self.pendingToken = deviceToken
         Messaging.messaging().apnsToken = deviceToken
         NotificationCenter.default.post(name: .apnsTokenReceived, object: deviceToken)
@@ -35,6 +37,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
     func application(_ application: UIApplication,
                      didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        let ns = error as NSError
+        print("[APNS] didFailToRegisterForRemoteNotifications domain=\(ns.domain) code=\(ns.code) message=\(ns.localizedDescription)")
         LSAnalytics.shared.logError(error, context: ["operation": "register_for_remote_notifications"])
         NotificationCenter.default.post(name: .apnsRegistrationFailed, object: error)
     }
