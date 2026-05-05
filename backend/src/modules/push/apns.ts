@@ -40,7 +40,10 @@ export async function pushToUser(userId: string, payload: PushPayload): Promise<
   }
 
   const devices = await prisma.device.findMany({ where: { userId } });
-  if (devices.length === 0) return;
+  if (devices.length === 0) {
+    log.info({ userId, title: payload.title }, 'push skipped: no devices registered for user');
+    return;
+  }
 
   const note = new apn.Notification();
   note.alert = { title: payload.title, body: payload.body };
@@ -57,6 +60,16 @@ export async function pushToUser(userId: string, payload: PushPayload): Promise<
     devices.map((d) => d.apnsToken),
   );
 
+  log.info(
+    {
+      userId,
+      title: payload.title,
+      sent: results.sent.length,
+      failed: results.failed.length,
+    },
+    'apns push attempted',
+  );
+
   if (results.failed.length > 0) {
     log.warn({ failed: results.failed }, 'apns failures');
     // Cull permanent failures (BadDeviceToken, Unregistered).
@@ -67,6 +80,7 @@ export async function pushToUser(userId: string, payload: PushPayload): Promise<
       })
       .map((f) => f.device);
     if (dead.length > 0) {
+      log.info({ count: dead.length }, 'culling dead apns tokens');
       await prisma.device.deleteMany({ where: { apnsToken: { in: dead } } });
     }
   }

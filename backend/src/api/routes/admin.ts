@@ -153,6 +153,65 @@ const routes: FastifyPluginAsync = async (app) => {
     });
     return reply.code(204).send();
   });
+
+  /**
+   * Diagnostic: list devices currently registered for a user. Use to verify
+   * the iOS app is actually POSTing /v1/devices.
+   */
+  app.get('/admin/users/:userId/devices', async (req, reply) => {
+    const params = z.object({ userId: z.string() }).parse(req.params);
+    const devices = await prisma.device.findMany({
+      where: { userId: params.userId },
+      orderBy: { lastSeenAt: 'desc' },
+    });
+    return reply.send({
+      items: devices.map((d) => ({
+        id: d.id,
+        tokenPrefix: d.apnsToken.slice(0, 12) + '…',
+        appVersion: d.appVersion,
+        osVersion: d.osVersion,
+        locale: d.locale,
+        lastSeenAt: d.lastSeenAt,
+      })),
+    });
+  });
+
+  /**
+   * Diagnostic: send a test push to every device for a user. Returns the
+   * number of devices targeted.
+   */
+  app.post('/admin/users/:userId/test-push', async (req, reply) => {
+    const params = z.object({ userId: z.string() }).parse(req.params);
+    const body = z
+      .object({ title: z.string().optional(), body: z.string().optional() })
+      .parse(req.body ?? {});
+    const { pushToUser } = await import('../../modules/push/apns.js');
+    const devices = await prisma.device.findMany({ where: { userId: params.userId } });
+    await pushToUser(params.userId, {
+      title: body.title ?? 'LastSeen test',
+      body: body.body ?? 'If you can read this, push delivery is working.',
+      data: { kind: 'test' },
+    });
+    return reply.send({ devicesTargeted: devices.length });
+  });
+
+  /**
+   * Diagnostic: list all users + their device counts. Quick way to spot
+   * whether anyone's registered for push at all.
+   */
+  app.get('/admin/users', async (_req, reply) => {
+    const users = await prisma.user.findMany({
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        email: true,
+        createdAt: true,
+        deletedAt: true,
+        _count: { select: { devices: true, trackedNumbers: true } },
+      },
+    });
+    return reply.send({ items: users });
+  });
 };
 
 export default routes;

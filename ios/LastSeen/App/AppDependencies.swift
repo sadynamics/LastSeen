@@ -38,6 +38,10 @@ final class AppDependencies {
             async let t: Void = tracking.refresh()
             async let n: Void = notifications.start()
             _ = await (s, t, n)
+            // Now that the auth token is set, re-run the device sync. Covers
+            // the case where APNs handed us a token *before* sign-in (which
+            // would have hit the API as 401 and cached the token only).
+            await notifications.syncDeviceIfPossible()
             // Once we have data, push the latest user properties.
             LSAnalytics.shared.setSubscriptionStatus(subscriptions.isSubscribed,
                                                     productId: subscriptions.activeProductId)
@@ -45,6 +49,18 @@ final class AppDependencies {
         } else {
             await subscriptions.loadProducts()
         }
+    }
+
+    /// Re-run the post-sign-in setup. Call after a fresh sign-in so we
+    /// register the device, refresh subscriptions, and pull tracked numbers
+    /// — without waiting for an app relaunch.
+    func onSignedIn() async {
+        identifyUserIfPossible()
+        async let s: Void = subscriptions.start()
+        async let t: Void = tracking.refresh()
+        async let n: Void = notifications.start()
+        _ = await (s, t, n)
+        await notifications.syncDeviceIfPossible()
     }
 
     /// Push current signed-in identity to analytics + crash reporting. Safe

@@ -7,6 +7,7 @@ import SwiftUI
 
 struct SignInView: View {
     @Environment(AuthService.self) private var auth
+    @Environment(AppDependencies.self) private var dependencies
     @State private var errorMessage: String?
     @State private var isWorking: Bool = false
     @State private var heroPulse: Bool = false
@@ -120,6 +121,10 @@ struct SignInView: View {
             defer { isWorking = false }
             do {
                 try await auth.signIn(with: credential)
+                // Now that we have an auth token, kick off the post-sign-in
+                // setup: subscriptions, tracking, and crucially the device
+                // sync so the backend knows where to send pushes.
+                await dependencies.onSignedIn()
             } catch {
                 errorMessage = error.localizedDescription
             }

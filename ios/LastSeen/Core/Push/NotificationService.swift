@@ -22,9 +22,18 @@ final class NotificationService: NSObject {
         super.init()
     }
 
+    /// Called from `AppDependencies.bootstrap` on every launch. If the user
+    /// has previously granted notification permission, we re-trigger the APNs
+    /// registration handshake so iOS hands us a fresh device token (which
+    /// then routes through `AppDelegate -> handleAPNsToken` and re-POSTs to
+    /// the backend). Without this, users who pass through onboarding once
+    /// never sync their device with the server on later launches.
     func start() async {
-        await refreshAuthorizationStatus()
         UNUserNotificationCenter.current().delegate = self
+        await refreshAuthorizationStatus()
+        if authorizationStatus == .authorized || authorizationStatus == .provisional || authorizationStatus == .ephemeral {
+            await registerForRemoteNotifications()
+        }
     }
 
     func refreshAuthorizationStatus() async {
@@ -58,10 +67,22 @@ final class NotificationService: NSObject {
         }
     }
 
-    /// Called from the AppDelegate / SceneDelegate when iOS hands us a token.
+    /// Called from the AppDelegate when iOS hands us a token. Caches the
+    /// token AND attempts to register it with the backend; if registration
+    /// fails (eg. the user isn't signed in yet), the token is retained so
+    /// `syncDeviceIfPossible()` can retry once the auth token lands.
     func handleAPNsToken(_ deviceToken: Data) async {
         let token = deviceToken.map { String(format: "%02x", $0) }.joined()
         apnsToken = token
+        await syncDeviceIfPossible()
+    }
+
+    /// Idempotent backend sync. Call this after sign-in, after auth-token
+    /// refresh, or whenever the app foregrounds, to make sure our APNs token
+    /// is present in the server-side `devices` table. Safe to call without a
+    /// cached token (no-op).
+    func syncDeviceIfPossible() async {
+        guard let token = apnsToken else { return }
         do {
             let body = DeviceRegistrationRequest(
                 apnsToken: token,
@@ -73,8 +94,10 @@ final class NotificationService: NSObject {
             isRegistered = true
             LSAnalytics.shared.log(.apnsTokenRegistered)
         } catch {
-            // Best-effort. The user is signed in but our /devices register failed.
-            // We retry on next app launch via start().
+            // Most likely 401 — user not yet signed in. The token stays cached
+            // in `apnsToken` so the next call to syncDeviceIfPossible (after
+            // sign-in) succeeds.
+            isRegistered = false
             LSAnalytics.shared.logError(error, context: ["operation": "device_register"])
         }
     }
