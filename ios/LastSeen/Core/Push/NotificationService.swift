@@ -86,6 +86,7 @@ final class NotificationService: NSObject {
         do {
             let body = DeviceRegistrationRequest(
                 apnsToken: token,
+                environment: NotificationService.apnsEnvironment,
                 appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
                 osVersion: UIDevice.current.systemVersion,
                 locale: Locale.current.identifier
@@ -100,6 +101,18 @@ final class NotificationService: NSObject {
             isRegistered = false
             LSAnalytics.shared.logError(error, context: ["operation": "device_register"])
         }
+    }
+
+    /// "development" for Xcode debug builds (which receive sandbox APNs
+    /// tokens), "production" for TestFlight / App Store builds. The backend
+    /// must use the matching APNs gateway or every push silently fails with
+    /// BadDeviceToken.
+    static var apnsEnvironment: String {
+        #if DEBUG
+        return "development"
+        #else
+        return "production"
+        #endif
     }
 }
 

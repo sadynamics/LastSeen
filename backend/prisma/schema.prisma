@@ -34,6 +34,10 @@ model Device {
   id          String   @id @default(cuid())
   userId      String
   apnsToken   String   @unique
+  /// Which APNs gateway this token is valid for. Xcode debug builds get
+  /// "development" tokens, TestFlight/App Store get "production" — sending
+  /// to the wrong gateway returns BadDeviceToken and pushes silently fail.
+  environment String   @default("production")
   appVersion  String?
   osVersion   String?
   locale      String?

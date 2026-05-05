@@ -7,9 +7,11 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AuthService.self) private var auth
     @Environment(SubscriptionService.self) private var subscriptions
+    @Environment(NotificationService.self) private var notifications
     @State private var showingPaywall = false
     @State private var showingDeleteConfirm = false
     @State private var isDeleting = false
+    @State private var showingPushDiagnostics = false
 
     var body: some View {
         NavigationStack {
@@ -18,6 +20,7 @@ struct SettingsView: View {
                 ScrollView {
                     VStack(spacing: Theme.Spacing.lg) {
                         subscriptionCard
+                        notificationsCard
                         accountCard
                         legalCard
                         dangerZoneCard
@@ -35,6 +38,9 @@ struct SettingsView: View {
             .toolbarBackground(.hidden, for: .navigationBar)
             .sheet(isPresented: $showingPaywall) {
                 PaywallView()
+            }
+            .sheet(isPresented: $showingPushDiagnostics) {
+                PushDiagnosticsView()
             }
             .alert("Delete account?", isPresented: $showingDeleteConfirm) {
                 Button("Cancel", role: .cancel) {}
@@ -128,6 +134,84 @@ struct SettingsView: View {
     }
 
     // MARK: Account
+
+    // MARK: Notifications
+
+    private var notificationsCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                SectionHeader(title: "Notifications")
+
+                HStack(spacing: Theme.Spacing.md) {
+                    IconBadge(systemImage: notifications.authorizationStatus == .authorized
+                              ? "bell.badge.fill" : "bell.slash.fill",
+                              tint: notifications.authorizationStatus == .authorized
+                                    ? Theme.Color.online : Theme.Color.danger,
+                              size: 36)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(notifAuthLabel)
+                            .font(Theme.Font.callout.weight(.semibold))
+                            .foregroundStyle(Theme.Color.primaryText)
+                        Text(notifSubtitle)
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Color.secondaryText)
+                    }
+                    Spacer()
+                }
+
+                if notifications.authorizationStatus == .denied {
+                    PrimaryButton(title: "Open iOS Settings", systemImage: "gearshape.fill") {
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            UIApplication.shared.open(url)
+                        }
+                    }
+                } else if notifications.authorizationStatus == .notDetermined {
+                    PrimaryButton(title: "Enable notifications", systemImage: "bell.fill") {
+                        Task { _ = await notifications.requestAuthorizationAndRegister() }
+                    }
+                } else {
+                    Button {
+                        showingPushDiagnostics = true
+                    } label: {
+                        HStack {
+                            Text("Push diagnostics")
+                                .font(Theme.Font.callout.weight(.medium))
+                                .foregroundStyle(Theme.Color.primaryText)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundStyle(Theme.Color.tertiaryText)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private var notifAuthLabel: String {
+        switch notifications.authorizationStatus {
+        case .authorized: return "Notifications enabled"
+        case .provisional: return "Provisional notifications"
+        case .ephemeral: return "Ephemeral (App Clip)"
+        case .denied: return "Notifications denied"
+        case .notDetermined: return "Not enabled yet"
+        @unknown default: return "Unknown state"
+        }
+    }
+
+    private var notifSubtitle: String {
+        switch notifications.authorizationStatus {
+        case .authorized:
+            return notifications.isRegistered
+                ? "Synced with server"
+                : "Waiting for token…"
+        case .denied:
+            return "Tap below to re-enable in iOS Settings"
+        case .notDetermined:
+            return "Push alerts when contacts come online"
+        default: return ""
+        }
+    }
 
     private var accountCard: some View {
         Card {

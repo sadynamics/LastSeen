@@ -30,6 +30,7 @@ nonisolated struct User: Codable, Hashable, Sendable {
 
 nonisolated struct DeviceRegistrationRequest: Encodable, Sendable {
     let apnsToken: String
+    let environment: String
     let appVersion: String?
     let osVersion: String?
     let locale: String?
