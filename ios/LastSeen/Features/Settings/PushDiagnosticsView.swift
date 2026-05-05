@@ -12,7 +12,7 @@ import Combine
 
 /// Bumped whenever the diagnostics UI changes meaningfully so we can confirm
 /// over screen-share that the latest build is running on the device.
-private let diagnosticsBuildMarker = "v6 · 2026-05-05"
+private let diagnosticsBuildMarker = "v7 · 2026-05-05"
 
 struct PushDiagnosticsView: View {
     @Environment(NotificationService.self) private var notifications

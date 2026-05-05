@@ -4,6 +4,7 @@
 
 import Foundation
 import Observation
+import OSLog
 import UIKit
 import UserNotifications
 
@@ -92,9 +93,13 @@ final class NotificationService: NSObject {
     func registerForRemoteNotifications() async {
         registrationAttempts += 1
         lastRegistrationAttemptAt = Date()
+        apnsLog.info("calling UIApplication.registerForRemoteNotifications attempt=\(self.registrationAttempts)")
+        print("[APNS] calling UIApplication.registerForRemoteNotifications attempt=\(registrationAttempts)")
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             DispatchQueue.main.async {
                 UIApplication.shared.registerForRemoteNotifications()
+                apnsLog.info("UIApplication.registerForRemoteNotifications returned (waiting for callback)")
+                print("[APNS] UIApplication.registerForRemoteNotifications returned (waiting for callback)")
                 continuation.resume()
             }
         }
