@@ -25,25 +25,34 @@ const STATUS_MAP: Record<PresenceEventPayload['status'], PresenceStatus> = {
 };
 
 /**
- * Ingest a single presence event from a Baileys session. Persists the event,
- * fans out notification + rollup jobs.
+ * Ingest a single presence event from a Baileys session. Persists one event
+ * per tracked-number row that matches the JID (multiple users can track the
+ * same phone number, so events MUST fan out to all of them) and fans out
+ * notification + rollup jobs.
  */
 export async function ingestPresence(ev: PresenceEventPayload): Promise<void> {
-  // WhatsApp now publishes most presence updates under the contact's LID
-  // (privacy-preserving identifier) instead of their phone JID. Match either
-  // so events get attributed to the right tracked number.
-  const tracked = await prisma.trackedNumber.findFirst({
+  // WhatsApp publishes presence updates under either the contact's phone JID
+  // (@s.whatsapp.net) or LID (@lid). Match either, and return ALL matching
+  // tracked-number rows — two different users may track the same number.
+  const trackedRows = await prisma.trackedNumber.findMany({
     where: {
       archivedAt: null,
       OR: [{ jid: ev.jid }, { lid: ev.jid }],
     },
     select: { id: true, userId: true },
   });
-  if (!tracked) {
+  if (trackedRows.length === 0) {
     log.debug({ jid: ev.jid, status: ev.status }, 'presence event without matching tracked number');
     return;
   }
 
+  await Promise.all(trackedRows.map((tracked) => ingestForTrackedNumber(ev, tracked)));
+}
+
+async function ingestForTrackedNumber(
+  ev: PresenceEventPayload,
+  tracked: { id: string; userId: string },
+): Promise<void> {
   const mapped = STATUS_MAP[ev.status];
   const now = ev.ts.getTime();
   const last = lastEventCache.get(tracked.id);
@@ -70,7 +79,6 @@ export async function ingestPresence(ev: PresenceEventPayload): Promise<void> {
 
   lastEventCache.set(tracked.id, { status: mapped, ts: now });
 
-  // Fan-out: notify + rollup.
   const day = ev.ts.toISOString().slice(0, 10);
   if (mapped === 'AVAILABLE' && last?.status !== 'AVAILABLE') {
     await notifyQueue().add('online', {
@@ -91,7 +99,7 @@ export async function ingestPresence(ev: PresenceEventPayload): Promise<void> {
   await rollupQueue().add(
     `rollup-${tracked.id}-${day}`,
     { type: 'rollup', trackedNumberId: tracked.id, day },
-    { jobId: `rollup-${tracked.id}-${day}`, delay: 30_000 }, // debounce
+    { jobId: `rollup-${tracked.id}-${day}`, delay: 30_000 },
   );
 
   log.info({ trackedNumberId: tracked.id, status: mapped }, 'ingested presence');
