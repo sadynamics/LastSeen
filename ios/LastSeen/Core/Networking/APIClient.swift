@@ -57,7 +57,23 @@ final class APIClient {
         self.session = URLSession(configuration: cfg)
 
         let dec = JSONDecoder()
-        dec.dateDecodingStrategy = .iso8601
+        // Backend emits ISO8601 timestamps via Date.toISOString(), which
+        // ALWAYS includes fractional seconds (e.g. "2026-05-04T18:23:00.799Z").
+        // The default `.iso8601` strategy uses an ISO8601DateFormatter that
+        // does NOT accept fractional seconds, so any response containing a
+        // millisecond-precision date would fail to decode and surface as
+        // "Couldn't read the server's response." Use a custom decoder that
+        // accepts both forms.
+        dec.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let str = try container.decode(String.self)
+            if let date = APIClient.iso8601WithFractional.date(from: str) { return date }
+            if let date = APIClient.iso8601Plain.date(from: str) { return date }
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Invalid ISO8601 date: \(str)",
+            )
+        }
         dec.keyDecodingStrategy = .useDefaultKeys
         self.decoder = dec
 
@@ -65,6 +81,18 @@ final class APIClient {
         enc.dateEncodingStrategy = .iso8601
         self.encoder = enc
     }
+
+    private static let iso8601WithFractional: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    private static let iso8601Plain: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
 
     // MARK: - Public requests
 
