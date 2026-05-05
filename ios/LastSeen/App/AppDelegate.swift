@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      didFailToRegisterForRemoteNotificationsWithError error: Error) {
         LSAnalytics.shared.logError(error, context: ["operation": "register_for_remote_notifications"])
+        NotificationCenter.default.post(name: .apnsRegistrationFailed, object: error)
     }
 }
 
@@ -55,4 +56,5 @@ extension AppDelegate: MessagingDelegate {
 
 extension Notification.Name {
     static let apnsTokenReceived = Notification.Name("apnsTokenReceived")
+    static let apnsRegistrationFailed = Notification.Name("apnsRegistrationFailed")
 }

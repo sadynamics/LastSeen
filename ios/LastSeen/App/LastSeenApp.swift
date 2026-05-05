@@ -31,6 +31,13 @@ struct LastSeenApp: App {
                         Task { await dependencies.notifications.handleAPNsToken(data) }
                     }
                 }
+                .onReceive(NotificationCenter.default.publisher(for: .apnsRegistrationFailed)) { note in
+                    if let error = note.object as? Error {
+                        Task { @MainActor in
+                            dependencies.notifications.handleAPNsRegistrationFailure(error)
+                        }
+                    }
+                }
         }
     }
 }

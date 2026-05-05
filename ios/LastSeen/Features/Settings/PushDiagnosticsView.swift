@@ -66,6 +66,19 @@ struct PushDiagnosticsView: View {
                     Divider().background(Theme.Color.separator)
                     row("User ID", value: String(user.id.prefix(12)) + "…")
                 }
+                if let err = notifications.lastRegistrationError {
+                    Divider().background(Theme.Color.separator)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("iOS rejected APNs registration")
+                            .font(Theme.Font.caption.weight(.semibold))
+                            .foregroundStyle(Theme.Color.danger)
+                        Text(err)
+                            .font(Theme.Font.caption.monospaced())
+                            .foregroundStyle(Theme.Color.secondaryText)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
         }
     }

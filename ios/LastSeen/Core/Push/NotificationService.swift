@@ -13,6 +13,12 @@ final class NotificationService: NSObject {
     private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
     private(set) var apnsToken: String?
     private(set) var isRegistered: Bool = false
+    /// Last error returned by iOS via `didFailToRegisterForRemoteNotifications`.
+    /// Surfaced in the diagnostics screen so the user (and we) can see WHY
+    /// APNs is rejecting the registration — typically a missing entitlement
+    /// or an App ID without "Push Notifications" enabled in the developer
+    /// portal.
+    private(set) var lastRegistrationError: String?
 
     private let api: APIClient
     private var registrationContinuation: CheckedContinuation<String, Error>?
@@ -74,7 +80,15 @@ final class NotificationService: NSObject {
     func handleAPNsToken(_ deviceToken: Data) async {
         let token = deviceToken.map { String(format: "%02x", $0) }.joined()
         apnsToken = token
+        lastRegistrationError = nil
         await syncDeviceIfPossible()
+    }
+
+    /// Called from the AppDelegate when iOS rejects the APNs registration.
+    /// We capture the error message so it shows up in the diagnostics screen.
+    func handleAPNsRegistrationFailure(_ error: Error) {
+        let ns = error as NSError
+        lastRegistrationError = "\(ns.domain) \(ns.code): \(ns.localizedDescription)"
     }
 
     /// Idempotent backend sync. Call this after sign-in, after auth-token
