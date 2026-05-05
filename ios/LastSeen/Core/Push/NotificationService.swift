@@ -19,6 +19,13 @@ final class NotificationService: NSObject {
     /// or an App ID without "Push Notifications" enabled in the developer
     /// portal.
     private(set) var lastRegistrationError: String?
+    /// Number of times we asked iOS to register for remote notifications since
+    /// app launch. Useful to confirm the call is even being made.
+    private(set) var registrationAttempts: Int = 0
+    /// Wall-clock time of the last call to UIApplication.registerForRemoteNotifications.
+    private(set) var lastRegistrationAttemptAt: Date?
+    /// Wall-clock time we last received a token from iOS (success).
+    private(set) var lastTokenReceivedAt: Date?
 
     private let api: APIClient
     private var registrationContinuation: CheckedContinuation<String, Error>?
@@ -65,6 +72,8 @@ final class NotificationService: NSObject {
     }
 
     func registerForRemoteNotifications() async {
+        registrationAttempts += 1
+        lastRegistrationAttemptAt = Date()
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             DispatchQueue.main.async {
                 UIApplication.shared.registerForRemoteNotifications()
@@ -80,6 +89,7 @@ final class NotificationService: NSObject {
     func handleAPNsToken(_ deviceToken: Data) async {
         let token = deviceToken.map { String(format: "%02x", $0) }.joined()
         apnsToken = token
+        lastTokenReceivedAt = Date()
         lastRegistrationError = nil
         await syncDeviceIfPossible()
     }
