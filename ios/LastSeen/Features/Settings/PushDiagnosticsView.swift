@@ -8,10 +8,11 @@
 import Foundation
 import SwiftUI
 import UserNotifications
+import Combine
 
 /// Bumped whenever the diagnostics UI changes meaningfully so we can confirm
 /// over screen-share that the latest build is running on the device.
-private let diagnosticsBuildMarker = "v3 · 2026-05-05"
+private let diagnosticsBuildMarker = "v4 · 2026-05-05"
 
 struct PushDiagnosticsView: View {
     @Environment(NotificationService.self) private var notifications
@@ -139,8 +140,11 @@ struct PushDiagnosticsView: View {
                 row("Embedded profile present",
                     value: EntitlementInspector.hasEmbeddedProfile ? "Yes" : "No")
                 Divider().background(Theme.Color.separator)
-                row("aps-environment (signed)",
-                    value: EntitlementInspector.apsEnvironmentFromEmbeddedProfile() ?? "MISSING")
+                row("aps-environment (runtime)",
+                    value: EntitlementInspector.apsEnvironmentRuntime() ?? "MISSING")
+                Divider().background(Theme.Color.separator)
+                row("aps-environment (profile)",
+                    value: EntitlementInspector.apsEnvironmentFromEmbeddedProfile() ?? "—")
             }
         }
     }
