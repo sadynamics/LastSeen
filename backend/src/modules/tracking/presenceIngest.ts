@@ -13,8 +13,37 @@ const log = logger.child({ mod: 'presenceIngest' });
  */
 const MIN_FLAP_MS = 5_000;
 
-/** Anti-flap cache, keyed by tracked number id. */
-const lastEventCache = new Map<string, { status: PresenceStatus; ts: number }>();
+interface LastEvent {
+  status: PresenceStatus;
+  ts: number;
+}
+
+/**
+ * Anti-flap + edge-detection cache, keyed by tracked number id. Populated
+ * lazily from the DB on first miss (see `loadLastEvent`) so that worker
+ * restarts don't:
+ *   - lose the AVAILABLE→UNAVAILABLE edge (and silently drop offline /
+ *     session-ended pushes for whoever was online at restart time), or
+ *   - re-fire a "Came online" push when an already-online contact emits
+ *     their next AVAILABLE pulse post-restart.
+ */
+const lastEventCache = new Map<string, LastEvent>();
+
+async function loadLastEvent(trackedNumberId: string): Promise<LastEvent | null> {
+  const cached = lastEventCache.get(trackedNumberId);
+  if (cached) return cached;
+
+  const fromDb = await prisma.presenceEvent.findFirst({
+    where: { trackedNumberId },
+    orderBy: { ts: 'desc' },
+    select: { status: true, ts: true },
+  });
+  if (!fromDb) return null;
+
+  const restored: LastEvent = { status: fromDb.status, ts: fromDb.ts.getTime() };
+  lastEventCache.set(trackedNumberId, restored);
+  return restored;
+}
 
 const STATUS_MAP: Record<PresenceEventPayload['status'], PresenceStatus> = {
   available: 'AVAILABLE',
@@ -55,7 +84,7 @@ async function ingestForTrackedNumber(
 ): Promise<void> {
   const mapped = STATUS_MAP[ev.status];
   const now = ev.ts.getTime();
-  const last = lastEventCache.get(tracked.id);
+  const last = await loadLastEvent(tracked.id);
 
   // Drop dupes within the flap window.
   if (last && last.status === mapped && now - last.ts < MIN_FLAP_MS) {

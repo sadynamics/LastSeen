@@ -203,15 +203,29 @@ export class ScraperPool {
       });
     }
     // Re-subscribe to all existing tracked numbers assigned to this scraper.
+    // CRITICAL: subscribe under BOTH the phone-JID and the LID. WhatsApp fans
+    // out presence events keyed under either form, and which one it picks for
+    // a given contact can change. If we only re-subscribe under `jid` after a
+    // reconnect/deploy, we silently stop receiving presence for every contact
+    // whose updates are LID-keyed — which means "Came online" pushes never
+    // fire for those users until somebody manually re-tracks the number.
     const tracked = await prisma.trackedNumber.findMany({
-      where: { scraperAccountId: scraperId, archivedAt: null, jid: { not: null } },
-      select: { jid: true },
+      where: { scraperAccountId: scraperId, archivedAt: null },
+      select: { id: true, jid: true, lid: true },
     });
     for (const t of tracked) {
       if (t.jid) {
-        await session.subscribe(t.jid).catch((err) => log.warn({ err, jid: t.jid }, 'resubscribe failed'));
+        await session
+          .subscribe(t.jid)
+          .catch((err) => log.warn({ err, trackedNumberId: t.id, jid: t.jid }, 'resubscribe jid failed'));
+      }
+      if (t.lid) {
+        await session
+          .subscribe(t.lid)
+          .catch((err) => log.warn({ err, trackedNumberId: t.id, lid: t.lid }, 'resubscribe lid failed'));
       }
     }
+    log.info({ scraperId, count: tracked.length }, 'resubscribed tracked numbers after pair');
   }
 }
 
