@@ -140,12 +140,30 @@ export class BaileysSession extends EventEmitter {
     this.sock.ev.on('presence.update', (u) => this.handlePresenceUpdate(u));
   }
 
+  /**
+   * Cleanly close the websocket WITHOUT unlinking the device.
+   *
+   * !!! DO NOT call `sock.logout()` here. !!!
+   *
+   * `logout()` sends an `iq` to WhatsApp removing our linked device entry,
+   * which makes the saved creds in S3 useless (next reconnect will need a
+   * new QR pair). It also closes with `DisconnectReason.loggedOut`, which
+   * `handleConnectionUpdate` treats as a ban and persists `status: BANNED`
+   * to the DB. So calling logout on graceful shutdown — i.e. on every
+   * Railway redeploy via the SIGTERM -> scraperPool.stopAll() chain —
+   * irreversibly burns every paired scraper. We have proof: three
+   * scrapers in a row (primary-2/3/4) were "banned" minutes after a
+   * deploy with no real WhatsApp action against them.
+   *
+   * The S3-backed auth state already preserves creds across restarts;
+   * `sock.end()` is enough to release the socket. Use `logoutAndWipe()`
+   * only when the operator explicitly wants to unpair.
+   */
   async disconnect(): Promise<void> {
     this.stopPresenceKeepalive();
     try {
-      await this.sock?.logout().catch(() => undefined);
-    } finally {
       this.sock?.end(undefined);
+    } finally {
       this.sock = null;
       this.setStatus('closed');
     }
