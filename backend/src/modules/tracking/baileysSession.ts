@@ -289,6 +289,11 @@ export class BaileysSession extends EventEmitter {
       // events for every tracked contact — even though `presenceSubscribe`
       // succeeds. Default to a benign name so we always go online.
       this.ensurePushName();
+      const me = this.sock?.authState.creds.me;
+      this.log.info(
+        { id: me?.id, lid: me?.lid, name: me?.name, hasName: !!me?.name },
+        'connection open: scraper identity',
+      );
       void this.startPresenceKeepalive();
       void this.resubscribeAll();
     }
@@ -378,13 +383,18 @@ export class BaileysSession extends EventEmitter {
     if (this.presenceKeepalive) clearInterval(this.presenceKeepalive);
     const tick = async (): Promise<void> => {
       if (!this.sock || this.status !== 'open') return;
+      const me = this.sock.authState.creds.me;
       try {
         await this.sock.sendPresenceUpdate('available');
         for (const jid of this.subscribed) {
           await this.sock.presenceSubscribe(jid).catch(() => undefined);
         }
+        this.log.info(
+          { name: me?.name, subscribed: this.subscribed.size },
+          'presence keepalive tick ok',
+        );
       } catch (err) {
-        this.log.warn({ err }, 'presence keepalive tick failed');
+        this.log.warn({ err, name: me?.name }, 'presence keepalive tick failed');
       }
     };
     await tick();
