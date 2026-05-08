@@ -262,6 +262,15 @@ export class BaileysSession extends EventEmitter {
       this.reconnectAttempts = 0;
       this.setStatus('open');
       this.emit('paired');
+      // Baileys silently no-ops `sendPresenceUpdate('available')` when
+      // `creds.me.name` is empty (the dreaded "no name present, ignoring
+      // presence update request..." log). That happens whenever the SIM's
+      // WhatsApp profile name was never set on the phone. Without an
+      // outbound `available` broadcast WA throttles fan-out of subscribed
+      // presence updates back to us, so we get zero `online` / `composing`
+      // events for every tracked contact — even though `presenceSubscribe`
+      // succeeds. Default to a benign name so we always go online.
+      this.ensurePushName();
       void this.startPresenceKeepalive();
       void this.resubscribeAll();
     }
@@ -314,6 +323,18 @@ export class BaileysSession extends EventEmitter {
         lastKnownPresence: p.lastSeen,
       });
     }
+  }
+
+  private ensurePushName(): void {
+    if (!this.sock) return;
+    const me = this.sock.authState.creds.me;
+    if (!me) return;
+    if (me.name && me.name.trim().length > 0) return;
+    const fallback = process.env.SCRAPER_DEFAULT_NAME?.trim() || 'LastSeen';
+    me.name = fallback;
+    // Trigger our s3 saveCreds via the same event the rest of Baileys uses.
+    this.sock.ev.emit('creds.update', this.sock.authState.creds);
+    this.log.info({ name: fallback }, 'defaulted scraper push-name (was empty)');
   }
 
   private async resubscribeAll(): Promise<void> {
