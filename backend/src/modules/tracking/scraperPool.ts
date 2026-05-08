@@ -70,14 +70,25 @@ export class ScraperPool {
     session.on('paired', () => {
       const redis = getRedis();
       void redis.del(`scraper:${acc.id}:qr`).catch(() => undefined);
-      void this.onPaired(acc.id, session);
+      // CRITICAL: any throw here propagates as an unhandled rejection and
+      // crashes the worker process. We've been bitten by exactly this:
+      // a unique-constraint conflict on phoneE164 (when the same WA account
+      // was previously paired on a now-banned/retired scraper row that still
+      // owned the unique field) cascaded into a Node.js process exit, which
+      // Railway then restart-loops until it gives up. Always swallow.
+      void this.onPaired(acc.id, session).catch((err) => {
+        log.error({ err, scraperId: acc.id }, 'onPaired handler failed; session stays open');
+      });
     });
 
     session.on('banned', (reason) => {
+      // Free the unique identity fields so a fresh scraper paired with the
+      // same WhatsApp account (or even the same number on a fresh SIM after
+      // recovery) doesn't blow up on the @unique constraint.
       void prisma.scraperAccount
         .update({
           where: { id: acc.id },
-          data: { status: 'BANNED', banReason: reason },
+          data: { status: 'BANNED', banReason: reason, jid: null, phoneE164: null },
         })
         .catch((err) => log.error({ err }, 'mark banned failed'));
       this.sessions.delete(acc.id);
@@ -178,6 +189,34 @@ export class ScraperPool {
       select: { status: true, jid: true, warmupUntil: true },
     });
     const isFirstPair = !existing?.jid || existing.status === 'PAIRING';
+
+    // If another (typically RETIRED/BANNED) scraper row still owns the same
+    // `phoneE164` or `jid`, the unique constraint will fire and crash the
+    // process. Null those fields on any conflicting row before we claim them.
+    // This also covers the case where a banned scraper was retired manually
+    // via DELETE /admin/scrapers/:id (which historically only flipped status).
+    if (e164 || phoneJid) {
+      const stolen = await prisma.scraperAccount.updateMany({
+        where: {
+          AND: [
+            { id: { not: scraperId } },
+            {
+              OR: [
+                e164 ? { phoneE164: e164 } : { phoneE164: '__never__' },
+                phoneJid ? { jid: phoneJid } : { jid: '__never__' },
+              ],
+            },
+          ],
+        },
+        data: { phoneE164: null, jid: null },
+      });
+      if (stolen.count > 0) {
+        log.warn(
+          { scraperId, e164, phoneJid, stolen: stolen.count },
+          'reclaimed phoneE164/jid from prior scraper row',
+        );
+      }
+    }
 
     if (isFirstPair) {
       await prisma.scraperAccount.update({

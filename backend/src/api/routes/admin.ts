@@ -147,9 +147,18 @@ const routes: FastifyPluginAsync = async (app) => {
 
   app.delete('/admin/scrapers/:id', async (req, reply) => {
     const params = z.object({ id: z.string() }).parse(req.params);
+    // Free the unique identity fields (`phoneE164`, `jid`) on retire — they
+    // hold the @unique slot otherwise, which means re-pairing the same WA
+    // account on a fresh row crashes the worker on `prisma.update` with a
+    // P2002 (unique constraint violation). We also detach any tracked numbers
+    // still pointing at this scraper so they can be reassigned elsewhere.
     await prisma.scraperAccount.update({
       where: { id: params.id },
-      data: { status: 'RETIRED' },
+      data: { status: 'RETIRED', jid: null, phoneE164: null },
+    });
+    await prisma.trackedNumber.updateMany({
+      where: { scraperAccountId: params.id, archivedAt: null },
+      data: { scraperAccountId: null },
     });
     return reply.code(204).send();
   });
