@@ -85,6 +85,14 @@ export class BaileysSession extends EventEmitter {
   private reconnectAttempts = 0;
   private resolveQr: ((qr: string) => void) | null = null;
   private presenceKeepalive: NodeJS.Timeout | null = null;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  /**
+   * Bumped on any meaningful socket activity (open, presence event, keepalive
+   * tick). The watchdog in `scraperPool` reads this to detect "zombie" sessions
+   * — ones whose status looks healthy but the underlying WebSocket is silently
+   * dead and the auto-reconnect didn't recover.
+   */
+  public lastActivityAt: number = Date.now();
 
   constructor(opts: BaileysSessionOptions) {
     super();
@@ -106,7 +114,11 @@ export class BaileysSession extends EventEmitter {
   }
 
   async connect(): Promise<void> {
-    if (this.status === 'connecting' || this.status === 'open') return;
+    if (this.status === 'connecting' || this.status === 'open') {
+      this.log.info({ status: this.status }, 'connect() skipped: already connecting/open');
+      return;
+    }
+    this.log.info({ attempt: this.reconnectAttempts }, 'connect() starting');
     this.setStatus('connecting');
 
     const { state, saveCreds } = await this.useS3AuthState();
@@ -161,6 +173,10 @@ export class BaileysSession extends EventEmitter {
    */
   async disconnect(): Promise<void> {
     this.stopPresenceKeepalive();
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     try {
       this.sock?.end(undefined);
     } finally {
@@ -278,6 +294,7 @@ export class BaileysSession extends EventEmitter {
     if (connection === 'open') {
       this.lastQr = null;
       this.reconnectAttempts = 0;
+      this.lastActivityAt = Date.now();
       this.setStatus('open');
       this.emit('paired');
       // Baileys silently no-ops `sendPresenceUpdate('available')` when
@@ -316,12 +333,36 @@ export class BaileysSession extends EventEmitter {
         return;
       }
 
+      // CRITICAL: must flip status away from 'open' before scheduling the
+      // reconnect. Otherwise `connect()`'s early-return guard
+      // (`if (status === 'open') return`) silently no-ops every retry — which
+      // is exactly how we lost ~5h of tracking once: WS closed at 16:38, the
+      // reconnect setTimeout fired but `connect()` saw status=='open' and
+      // returned without a log line. Tracking blackout until manual restart.
+      try {
+        this.sock?.end(undefined);
+      } catch {
+        // socket already torn down
+      }
+      this.sock = null;
+      this.setStatus('closed');
+
       // Backoff reconnect.
       this.reconnectAttempts += 1;
       const backoffMs = Math.min(60_000, 2_000 * 2 ** Math.min(this.reconnectAttempts, 5));
-      setTimeout(() => {
+      this.log.info(
+        { attempt: this.reconnectAttempts, backoffMs },
+        'scheduling reconnect',
+      );
+      if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = null;
+        this.log.info({ attempt: this.reconnectAttempts }, 'reconnect timer fired');
         void this.connect().catch((err) => {
-          this.log.error({ err }, 'reconnect failed');
+          this.log.error({ err }, 'reconnect failed; will retry on next close');
+          // Trigger another reconnect cycle by re-emitting close, so the
+          // backoff stays alive instead of stalling on a single thrown error.
+          this.handleConnectionUpdate({ connection: 'close', lastDisconnect: { error: err as Error } });
         });
       }, backoffMs);
     }
@@ -331,6 +372,7 @@ export class BaileysSession extends EventEmitter {
     id: string;
     presences: { [jid: string]: { lastKnownPresence?: SessionPresence; lastSeen?: number } };
   }): void {
+    this.lastActivityAt = Date.now();
     for (const [jid, p] of Object.entries(u.presences)) {
       const status = p.lastKnownPresence;
       if (!status) {
@@ -389,6 +431,7 @@ export class BaileysSession extends EventEmitter {
         for (const jid of this.subscribed) {
           await this.sock.presenceSubscribe(jid).catch(() => undefined);
         }
+        this.lastActivityAt = Date.now();
         this.log.info(
           { name: me?.name, subscribed: this.subscribed.size },
           'presence keepalive tick ok',

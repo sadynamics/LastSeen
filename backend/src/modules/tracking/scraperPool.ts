@@ -172,6 +172,46 @@ export class ScraperPool {
     this.sessions.delete(scraperId);
   }
 
+  /**
+   * Watchdog: detect "zombie" sessions whose underlying WebSocket is silently
+   * dead — no presence events, no keepalive ticks for `staleAfterMs` — and
+   * forcibly restart them. This is the safety net for any reconnect-path bug
+   * we haven't anticipated; the previous one (status guard preventing
+   * `connect()` after `'close'`) caused a silent 5-hour tracking blackout.
+   *
+   * Returns the number of sessions that were force-restarted.
+   */
+  async restartStaleSessions(staleAfterMs = 25 * 60 * 1000): Promise<number> {
+    const now = Date.now();
+    const stale: Array<{ scraperId: string; idleMs: number }> = [];
+    for (const [scraperId, session] of this.sessions.entries()) {
+      const idleMs = now - session.lastActivityAt;
+      if (idleMs > staleAfterMs) {
+        stale.push({ scraperId, idleMs });
+      }
+    }
+
+    for (const { scraperId, idleMs } of stale) {
+      log.warn({ scraperId, idleMs, status: this.sessions.get(scraperId)?.status }, 'restarting stale session');
+      try {
+        await this.stop(scraperId);
+        // Re-load the row from DB so we pick up any status changes (e.g.
+        // promotion to HEALTHY) that happened while the session was alive.
+        const acc = await prisma.scraperAccount.findUnique({ where: { id: scraperId } });
+        if (acc && (acc.status === 'HEALTHY' || acc.status === 'WARMING' || acc.status === 'COOLING')) {
+          await this.start(acc);
+          log.info({ scraperId }, 'stale session restarted');
+        } else {
+          log.info({ scraperId, status: acc?.status }, 'stale session not restarted (status not eligible)');
+        }
+      } catch (err) {
+        log.error({ err, scraperId }, 'failed to restart stale session');
+      }
+    }
+
+    return stale.length;
+  }
+
   async stopAll(): Promise<void> {
     await Promise.all([...this.sessions.values()].map((s) => s.disconnect().catch(() => undefined)));
     this.sessions.clear();

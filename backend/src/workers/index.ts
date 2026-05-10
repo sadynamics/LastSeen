@@ -68,9 +68,14 @@ async function runMaintenance(): Promise<void> {
     await trackingQueue().add('track', { type: 'track', trackedNumberId: t.id });
   }
 
-  if (promoted > 0 || orphans.length > 0 || missingLid.length > 0) {
+  // Watchdog: restart any session whose Baileys socket has gone silent. The
+  // keepalive tick is 10min and active users emit presence frequently, so 25
+  // min of zero activity is unambiguously a dead/zombie session.
+  const restarted = await scraperPool.restartStaleSessions(25 * 60 * 1000);
+
+  if (promoted > 0 || orphans.length > 0 || missingLid.length > 0 || restarted > 0) {
     log.info(
-      { promoted, requeued: orphans.length, lidBackfill: missingLid.length },
+      { promoted, requeued: orphans.length, lidBackfill: missingLid.length, restartedSessions: restarted },
       'maintenance pass',
     );
   }
