@@ -23,8 +23,8 @@ enum AppConfig {
     static let bundleId = Bundle.main.bundleIdentifier ?? "collabrainstech.LastSeen"
 
     enum Subscription {
-        static let weeklyProductId = "lastseen.pro.weekly"
-        static let monthlyProductId = "lastseen.pro.monthly"
-        static let allIds: [String] = [weeklyProductId, monthlyProductId]
+        static let weeklyProductId = "collabrainstech.LastSeen.weekly"
+        static let yearlyProductId = "collabrainstech.LastSeen.yearly"
+        static let allIds: [String] = [weeklyProductId, yearlyProductId]
     }
 }

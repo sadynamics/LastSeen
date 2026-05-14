@@ -31,7 +31,7 @@ Run through this before submitting v1.0 to TestFlight, then again before App Sto
 
 ## App Store Connect
 
-- [ ] Subscription products `lastseen.pro.weekly` and `lastseen.pro.monthly` created and submitted with the app build.
+- [ ] Subscription products `collabrainstech.LastSeen.weekly` and `collabrainstech.LastSeen.yearly` created and submitted with the app build.
 - [ ] App Privacy questionnaire filled (see [app-store-metadata.md](app-store-metadata.md)).
 - [ ] App Review notes include test credentials.
 - [ ] Screenshots reinforce family / consent framing (see [app-review.md](app-review.md)).

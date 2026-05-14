@@ -27,6 +27,12 @@ final class NotificationService: NSObject {
     private(set) var lastRegistrationAttemptAt: Date?
     /// Wall-clock time we last received a token from iOS (success).
     private(set) var lastTokenReceivedAt: Date?
+    /// Wall-clock time of the last `POST /v1/devices` attempt.
+    private(set) var lastSyncAttemptAt: Date?
+    /// Reason the last server sync failed, e.g. "HTTP 401 unauthorized" or
+    /// "Offline". Cleared on the next successful sync. Surfaced in the
+    /// diagnostics screen.
+    private(set) var lastSyncError: String?
 
     private let api: APIClient
     private var registrationContinuation: CheckedContinuation<String, Error>?
@@ -129,7 +135,14 @@ final class NotificationService: NSObject {
     /// is present in the server-side `devices` table. Safe to call without a
     /// cached token (no-op).
     func syncDeviceIfPossible() async {
-        guard let token = apnsToken else { return }
+        guard let token = apnsToken else {
+            apnsLog.info("syncDeviceIfPossible: no cached APNs token, skipping")
+            print("[APNS] syncDeviceIfPossible: no cached APNs token, skipping")
+            return
+        }
+        lastSyncAttemptAt = Date()
+        apnsLog.info("syncDeviceIfPossible: POST /v1/devices environment=\(NotificationService.apnsEnvironment, privacy: .public) tokenPrefix=\(token.prefix(12), privacy: .public)")
+        print("[APNS] syncDeviceIfPossible: POST /v1/devices environment=\(NotificationService.apnsEnvironment) tokenPrefix=\(token.prefix(12))…")
         do {
             let body = DeviceRegistrationRequest(
                 apnsToken: token,
@@ -140,14 +153,48 @@ final class NotificationService: NSObject {
             )
             _ = try await api.post("/v1/devices", body: body, as: DeviceRegistrationResponse.self)
             isRegistered = true
+            lastSyncError = nil
+            apnsLog.info("syncDeviceIfPossible: success")
+            print("[APNS] syncDeviceIfPossible: success")
             LSAnalytics.shared.log(.apnsTokenRegistered)
         } catch {
-            // Most likely 401 — user not yet signed in. The token stays cached
-            // in `apnsToken` so the next call to syncDeviceIfPossible (after
-            // sign-in) succeeds.
+            // Capture a human-readable reason so the diagnostics screen can
+            // show the user *why* registration failed. 401 here means the
+            // sync ran before sign-in completed — the cached token stays so
+            // the next call (after `onSignedIn`) succeeds.
             isRegistered = false
+            let desc = NotificationService.describeError(error)
+            lastSyncError = desc
+            apnsLog.error("syncDeviceIfPossible: failed \(desc, privacy: .public)")
+            print("[APNS] syncDeviceIfPossible: failed \(desc)")
             LSAnalytics.shared.logError(error, context: ["operation": "device_register"])
         }
+    }
+
+    /// Render `Error` into a short, diagnostic-friendly string. Pulls out the
+    /// HTTP status code from `APIError.server` so the user can see exactly
+    /// what the backend said.
+    static func describeError(_ error: Error) -> String {
+        if let api = error as? APIError {
+            switch api {
+            case .invalidURL:
+                return "Invalid URL"
+            case .transport(let urlErr):
+                return "Network error (\(urlErr.code.rawValue)): \(urlErr.localizedDescription)"
+            case .decode(let s):
+                return "Decode error: \(s)"
+            case .server(let status, let code, let msg):
+                let parts: [String] = ["HTTP \(status)", code, msg].compactMap { $0 }
+                return parts.joined(separator: " · ")
+            case .unauthorized:
+                return "HTTP 401 unauthorized (sign in first)"
+            case .subscriptionRequired:
+                return "HTTP 402 subscription required"
+            case .offline:
+                return "Offline"
+            }
+        }
+        return error.localizedDescription
     }
 
     /// "development" for Xcode debug builds (which receive sandbox APNs

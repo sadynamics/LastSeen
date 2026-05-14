@@ -12,15 +12,18 @@ import Combine
 
 /// Bumped whenever the diagnostics UI changes meaningfully so we can confirm
 /// over screen-share that the latest build is running on the device.
-private let diagnosticsBuildMarker = "v7 · 2026-05-05"
+private let diagnosticsBuildMarker = "v8 · 2026-05-14"
 
 struct PushDiagnosticsView: View {
     @Environment(NotificationService.self) private var notifications
     @Environment(AuthService.self) private var auth
+    @Environment(AppDependencies.self) private var dependencies
     @Environment(\.dismiss) private var dismiss
 
     @State private var lastAction: String?
     @State private var nowTick: Date = Date()
+    @State private var serverDeviceCount: Int?
+    @State private var serverProbeInFlight = false
 
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -108,24 +111,41 @@ struct PushDiagnosticsView: View {
                     Divider().background(Theme.Color.separator)
                     row("Last token received", value: relative(at))
                 }
+                if let at = notifications.lastSyncAttemptAt {
+                    Divider().background(Theme.Color.separator)
+                    row("Last server sync", value: relative(at))
+                }
+                Divider().background(Theme.Color.separator)
+                row("Server-side devices",
+                    value: serverProbeInFlight
+                        ? "checking…"
+                        : (serverDeviceCount.map { "\($0)" } ?? "not checked"))
                 if case .signedIn(let user) = auth.state {
                     Divider().background(Theme.Color.separator)
                     row("User ID", value: String(user.id.prefix(12)) + "…")
                 }
                 if let err = notifications.lastRegistrationError {
                     Divider().background(Theme.Color.separator)
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("iOS rejected APNs registration")
-                            .font(Theme.Font.caption.weight(.semibold))
-                            .foregroundStyle(Theme.Color.danger)
-                        Text(err)
-                            .font(Theme.Font.caption.monospaced())
-                            .foregroundStyle(Theme.Color.secondaryText)
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    failureBlock(title: "iOS rejected APNs registration", body: err)
+                }
+                if let err = notifications.lastSyncError {
+                    Divider().background(Theme.Color.separator)
+                    failureBlock(title: "Server sync failed", body: err)
                 }
             }
+        }
+    }
+
+    private func failureBlock(title: String, body: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(Theme.Font.caption.weight(.semibold))
+                .foregroundStyle(Theme.Color.danger)
+            Text(body)
+                .font(Theme.Font.caption.monospaced())
+                .foregroundStyle(Theme.Color.secondaryText)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -235,10 +255,57 @@ struct PushDiagnosticsView: View {
                         await notifications.syncDeviceIfPossible()
                         lastAction = notifications.isRegistered
                             ? "Synced with server."
-                            : "Server sync failed (no token cached yet)."
+                            : "Server sync failed."
+                        await probeServerDeviceCount()
                     }
                 }
+
+                SecondaryButton(title: "Send test push to me",
+                                systemImage: "paperplane.fill") {
+                    Task { await sendTestPush() }
+                }
+
+                SecondaryButton(title: "Check server device count",
+                                systemImage: "magnifyingglass") {
+                    Task { await probeServerDeviceCount() }
+                }
             }
+        }
+    }
+
+    // MARK: Network probes
+
+    /// Ask the backend how many devices are registered for the signed-in
+    /// user. Surfaces the result in the status card so the user can SEE the
+    /// registration handshake working (or not) end-to-end.
+    private func probeServerDeviceCount() async {
+        serverProbeInFlight = true
+        defer { serverProbeInFlight = false }
+        do {
+            let res = try await dependencies.api.get("/v1/me/devices",
+                                                     as: MyDevicesResponse.self)
+            serverDeviceCount = res.count
+            lastAction = res.count == 0
+                ? "Server has 0 devices for you. The /v1/devices POST never reached the server (or was rejected)."
+                : "Server has \(res.count) device(s) registered for you."
+        } catch {
+            lastAction = "Couldn't reach /v1/me/devices: \(NotificationService.describeError(error))"
+        }
+    }
+
+    private func sendTestPush() async {
+        do {
+            struct Empty: Encodable, Sendable {}
+            let res = try await dependencies.api.post("/v1/me/test-push",
+                                                      body: Empty(),
+                                                      as: TestPushResponse.self)
+            if res.devicesTargeted == 0 {
+                lastAction = "Server has 0 devices to push to — sync your device first."
+            } else {
+                lastAction = "Test push sent to \(res.devicesTargeted) device(s). It can take 30s to arrive."
+            }
+        } catch {
+            lastAction = "Test push failed: \(NotificationService.describeError(error))"
         }
     }
 }

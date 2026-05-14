@@ -40,6 +40,23 @@ nonisolated struct DeviceRegistrationResponse: Decodable, Sendable {
     let id: String
 }
 
+nonisolated struct MyDevicesResponse: Decodable, Sendable {
+    nonisolated struct Item: Decodable, Sendable {
+        let id: String
+        let tokenPrefix: String
+        let environment: String?
+        let appVersion: String?
+        let osVersion: String?
+        let lastSeenAt: Date?
+    }
+    let count: Int
+    let items: [Item]
+}
+
+nonisolated struct TestPushResponse: Decodable, Sendable {
+    let devicesTargeted: Int
+}
+
 // MARK: - Tracked numbers
 
 nonisolated enum ScraperStatus: String, Codable, Sendable {

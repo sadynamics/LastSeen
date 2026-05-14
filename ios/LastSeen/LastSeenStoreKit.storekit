@@ -13,7 +13,7 @@
   },
   "subscriptionGroups" : [
     {
-      "id" : "lastseen.pro.group",
+      "id" : "collabrainstech.LastSeen.group",
       "localizations" : [],
       "name" : "LastSeen Pro",
       "subscriptions" : [
@@ -23,9 +23,9 @@
           "displayPrice" : "5.99",
           "familyShareable" : false,
           "groupNumber" : 1,
-          "internalID" : "lastseen.pro.weekly",
+          "internalID" : "collabrainstech.LastSeen.weekly",
           "introductoryOffer" : {
-            "internalID" : "lastseen.pro.weekly.trial",
+            "internalID" : "collabrainstech.LastSeen.weekly.trial",
             "paymentMode" : "free",
             "subscriptionPeriod" : "P3D"
           },
@@ -36,35 +36,35 @@
               "locale" : "en_US"
             }
           ],
-          "productID" : "lastseen.pro.weekly",
+          "productID" : "collabrainstech.LastSeen.weekly",
           "recurringSubscriptionPeriod" : "P1W",
           "referenceName" : "Weekly Pro",
-          "subscriptionGroupID" : "lastseen.pro.group",
+          "subscriptionGroupID" : "collabrainstech.LastSeen.group",
           "type" : "RecurringSubscription"
         },
         {
           "adHocOffers" : [],
           "codeOffers" : [],
-          "displayPrice" : "19.99",
+          "displayPrice" : "59.99",
           "familyShareable" : false,
           "groupNumber" : 2,
-          "internalID" : "lastseen.pro.monthly",
+          "internalID" : "collabrainstech.LastSeen.yearly",
           "introductoryOffer" : {
-            "internalID" : "lastseen.pro.monthly.trial",
+            "internalID" : "collabrainstech.LastSeen.yearly.trial",
             "paymentMode" : "free",
             "subscriptionPeriod" : "P3D"
           },
           "localizations" : [
             {
-              "description" : "Monthly auto-renew",
-              "displayName" : "Monthly Pro",
+              "description" : "Yearly auto-renew",
+              "displayName" : "Yearly Pro",
               "locale" : "en_US"
             }
           ],
-          "productID" : "lastseen.pro.monthly",
-          "recurringSubscriptionPeriod" : "P1M",
-          "referenceName" : "Monthly Pro",
-          "subscriptionGroupID" : "lastseen.pro.group",
+          "productID" : "collabrainstech.LastSeen.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Yearly Pro",
+          "subscriptionGroupID" : "collabrainstech.LastSeen.group",
           "type" : "RecurringSubscription"
         }
       ]

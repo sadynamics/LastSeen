@@ -48,7 +48,7 @@ struct PaywallView: View {
             }
             if selectedProductId == nil {
                 selectedProductId = subscriptions.products
-                    .first(where: { $0.id == AppConfig.Subscription.monthlyProductId })?.id
+                    .first(where: { $0.id == AppConfig.Subscription.yearlyProductId })?.id
                     ?? subscriptions.products.first?.id
             }
         }
@@ -75,7 +75,7 @@ struct PaywallView: View {
             .padding(.top, Theme.Spacing.lg)
 
             VStack(spacing: 6) {
-                Text("Unlock LastSeen Pro")
+                Text("Unlock Premium")
                     .font(Theme.Font.title)
                     .foregroundStyle(Theme.Color.primaryText)
                     .multilineTextAlignment(.center)
@@ -137,7 +137,9 @@ struct PaywallView: View {
 
     private func planRow(_ product: Product) -> some View {
         let selected = selectedProductId == product.id
-        let isMonthly = product.id == AppConfig.Subscription.monthlyProductId
+        let isYearly = product.id == AppConfig.Subscription.yearlyProductId
+        let trial = freeTrialOffer(product)
+        let periodLabel = subscriptionPeriodLabel(product)
 
         return Button {
             if selectedProductId != product.id {
@@ -146,7 +148,7 @@ struct PaywallView: View {
             selectedProductId = product.id
         } label: {
             VStack(alignment: .leading, spacing: 0) {
-                if isMonthly {
+                if isYearly {
                     HStack {
                         Text("BEST VALUE")
                             .font(Theme.Font.label)
@@ -165,15 +167,19 @@ struct PaywallView: View {
                         Text(product.displayName)
                             .font(Theme.Font.headline)
                             .foregroundStyle(Theme.Color.primaryText)
-                        Text(product.description)
+                        Text(planSubtitle(for: product))
                             .font(Theme.Font.caption)
                             .foregroundStyle(Theme.Color.secondaryText)
-                            .lineLimit(2)
+                            .lineLimit(1)
                     }
-                    Spacer()
-                    Text(product.displayPrice)
-                        .font(Theme.Font.numericMedium)
-                        .foregroundStyle(Theme.Color.primaryText)
+                    Spacer(minLength: Theme.Spacing.sm)
+                    if let trial {
+                        trialBadge(trial)
+                    } else {
+                        Text(product.displayPrice)
+                            .font(Theme.Font.numericMedium)
+                            .foregroundStyle(Theme.Color.primaryText)
+                    }
                 }
             }
             .padding(Theme.Spacing.lg)
@@ -196,6 +202,25 @@ struct PaywallView: View {
             )
         }
         .buttonStyle(ScalePressStyle(scale: 0.98))
+    }
+
+    /// Compact pill on the right of a plan row that calls out the free trial.
+    private func trialBadge(_ trial: Product.SubscriptionOffer) -> some View {
+        Text("\(offerDurationLabel(trial)) FREE")
+            .font(Theme.Font.label)
+            .tracking(0.8)
+            .foregroundStyle(Theme.Color.online)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(Theme.Color.online.opacity(0.14))
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(Theme.Color.online.opacity(0.35), lineWidth: 0.5)
+            )
+            .fixedSize()
     }
 
     private func selectionRing(selected: Bool) -> some View {
@@ -244,15 +269,15 @@ struct PaywallView: View {
               let product = subscriptions.products.first(where: { $0.id == id }) else {
             return "Continue"
         }
-        if let intro = product.subscription?.introductoryOffer, intro.paymentMode == .freeTrial {
-            return "Start free trial"
+        if let trial = freeTrialOffer(product) {
+            return "Try free for \(offerDurationLabel(trial))"
         }
-        return "Subscribe \(product.displayPrice)"
+        return "Subscribe"
     }
 
     private var legalRow: some View {
         VStack(spacing: Theme.Spacing.xs) {
-            Text("Subscriptions auto-renew until cancelled. Cancel anytime in Settings → Apple ID → Subscriptions.")
+            Text("Auto-renews. Cancel anytime.")
                 .font(Theme.Font.caption)
                 .foregroundStyle(Theme.Color.tertiaryText)
                 .multilineTextAlignment(.center)
@@ -262,6 +287,81 @@ struct PaywallView: View {
             }
             .font(Theme.Font.caption.weight(.medium))
             .foregroundStyle(Theme.Color.secondaryText)
+        }
+    }
+
+    // MARK: StoreKit helpers
+
+    /// One-line subtitle under the plan name.
+    /// - With trial: "then $X.XX / week"
+    /// - Without trial: "per week"
+    /// - No subscription metadata: falls back to `product.description`.
+    private func planSubtitle(for product: Product) -> String {
+        let period = subscriptionPeriodLabel(product)
+        if freeTrialOffer(product) != nil {
+            if !period.isEmpty {
+                return "then \(product.displayPrice) / \(period)"
+            }
+            return "then \(product.displayPrice)"
+        }
+        if !period.isEmpty { return "per \(period)" }
+        return product.description
+    }
+
+    /// The product's introductory offer if and only if it is a free trial.
+    private func freeTrialOffer(_ product: Product) -> Product.SubscriptionOffer? {
+        guard let intro = product.subscription?.introductoryOffer,
+              intro.paymentMode == .freeTrial else { return nil }
+        return intro
+    }
+
+    /// Human-readable recurring period for a product. Renders just the unit
+    /// when value == 1 ("week", "year") and a counted form when value > 1
+    /// ("2 weeks"). Empty for non-renewing products.
+    private func subscriptionPeriodLabel(_ product: Product) -> String {
+        guard let period = product.subscription?.subscriptionPeriod else { return "" }
+        let (value, unit) = normalizedPeriod(value: period.value, unit: period.unit)
+        let base = baseUnitName(unit)
+        if base.isEmpty { return "" }
+        if value == 1 { return base }
+        return "\(value) \(base)s"
+    }
+
+    /// Human-readable total duration of an offer, e.g. "3 days", "1 month".
+    /// Always includes the count so "Try free for 1 day" / "3 days" reads
+    /// correctly.
+    private func offerDurationLabel(_ offer: Product.SubscriptionOffer) -> String {
+        let total = offer.period.value * offer.periodCount
+        let (value, unit) = normalizedPeriod(value: total, unit: offer.period.unit)
+        let base = baseUnitName(unit)
+        if base.isEmpty { return "" }
+        return "\(value) \(value == 1 ? base : "\(base)s")"
+    }
+
+    /// App Store Connect / StoreKit sometimes expresses week, month, or year
+    /// periods using smaller units (e.g. a weekly product as `(7, .day)`).
+    /// Normalize the obvious equivalents so the UI reads naturally.
+    private func normalizedPeriod(value: Int,
+                                  unit: Product.SubscriptionPeriod.Unit)
+        -> (Int, Product.SubscriptionPeriod.Unit) {
+        var v = value
+        var u = unit
+        if u == .day {
+            if v % 365 == 0 { v /= 365; u = .year }
+            else if v % 30 == 0 { v /= 30; u = .month }
+            else if v % 7 == 0 { v /= 7; u = .week }
+        }
+        if u == .month && v % 12 == 0 { v /= 12; u = .year }
+        return (v, u)
+    }
+
+    private func baseUnitName(_ unit: Product.SubscriptionPeriod.Unit) -> String {
+        switch unit {
+        case .day:   return "day"
+        case .week:  return "week"
+        case .month: return "month"
+        case .year:  return "year"
+        @unknown default: return ""
         }
     }
 

@@ -13,10 +13,10 @@
 
 | Reference name | Product ID | Type | Duration | Price (USD) | Free trial |
 |---|---|---|---|---|---|
-| Weekly Pro | `lastseen.pro.weekly` | Auto-renewable | 1 week | $5.99 | 3 days |
-| Monthly Pro | `lastseen.pro.monthly` | Auto-renewable | 1 month | $19.99 | 3 days |
+| Weekly Pro | `collabrainstech.LastSeen.weekly` | Auto-renewable | 1 week | $5.99 | 3 days |
+| Yearly Pro | `collabrainstech.LastSeen.yearly` | Auto-renewable | 1 year | $59.99 | 3 days |
 
-Both products belong to the subscription group **`lastseen.pro.group`**. The app uses raw StoreKit 2; no RevenueCat.
+Both products belong to the subscription group **`collabrainstech.LastSeen.group`**. The app uses raw StoreKit 2; no RevenueCat.
 
 ## Server-to-Server notifications
 
