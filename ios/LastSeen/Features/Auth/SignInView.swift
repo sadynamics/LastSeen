@@ -12,14 +12,19 @@ struct SignInView: View {
     @State private var isWorking: Bool = false
     @State private var heroPulse: Bool = false
     /// App Review login sheet. Surfaced two ways:
-    /// 1. A small "App Reviewer Sign-In" link below the legal copy.
-    /// 2. (Legacy) Triple-tap on the hero logo.
-    /// Both routes lead to the same Username + Password sheet, which
-    /// matches what Apple's reviewer enters into App Store Connect →
-    /// Sign-In Information. Backed by `REVIEWER_LOGIN_CODE` on the
-    /// server; when that env var is unset the endpoint 404s so the UI is
-    /// harmless post-approval.
+    /// 1. A small "App Reviewer Sign-In" link below the legal copy. This
+    ///    link is hidden by default and only shown when the backend
+    ///    reports `reviewerSignInEnabled = true` (which it does iff the
+    ///    `REVIEWER_LOGIN_CODE` env var is set on Railway). Unsetting
+    ///    that env var post-approval hides the link AND 404s the
+    ///    endpoint, with no app resubmission required.
+    /// 2. (Backup) Triple-tap on the hero logo — always wired so we
+    ///    have a recovery path if anything goes wrong with the config
+    ///    fetch on the next submission. Real users won't stumble on it,
+    ///    and with the env var unset the sheet's Continue button just
+    ///    returns "Sign-in not accepted."
     @State private var showingReviewerSheet: Bool = false
+    @State private var reviewerLinkVisible: Bool = false
     @State private var reviewerUsername: String = ""
     @State private var reviewerPassword: String = ""
     @State private var reviewerError: String?
@@ -45,6 +50,14 @@ struct SignInView: View {
             }
         }
         .onAppear { heroPulse = true }
+        .task {
+            // One-shot probe: ask the backend whether to expose the
+            // reviewer link. Network failure or 404 keeps the link
+            // hidden — the safer default for production users.
+            if let cfg = await auth.fetchPublicConfig() {
+                reviewerLinkVisible = cfg.reviewerSignInEnabled
+            }
+        }
         .trackScreen("sign_in", className: "SignInView")
         .sheet(isPresented: $showingReviewerSheet) {
             reviewerCredentialsSheet
@@ -132,13 +145,20 @@ struct SignInView: View {
             // Discreet but discoverable entry for App Review. Apple's
             // reviewer notes tell the tester to tap this link and enter
             // the Sign-In Information credentials we provide in App
-            // Store Connect.
-            Button("App Reviewer Sign-In") {
-                openReviewerSheet()
+            // Store Connect. Only rendered when the backend reports
+            // `reviewerSignInEnabled` — controlled by toggling the
+            // `REVIEWER_LOGIN_CODE` env var on Railway, so unsetting
+            // post-approval hides this from every user without an app
+            // resubmission.
+            if reviewerLinkVisible {
+                Button("App Reviewer Sign-In") {
+                    openReviewerSheet()
+                }
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Color.tertiaryText)
+                .accessibilityIdentifier("reviewerSignInLink")
+                .transition(.opacity)
             }
-            .font(Theme.Font.caption)
-            .foregroundStyle(Theme.Color.tertiaryText)
-            .accessibilityIdentifier("reviewerSignInLink")
         }
     }
 

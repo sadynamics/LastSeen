@@ -106,9 +106,20 @@ email to the reviewer.
 >    field for this build's App Review submission. Username stays
 >    `reviewer@lastseen.app`.
 > 4. Once the build is approved, **unset** the variable:
->    `railway variables --unset REVIEWER_LOGIN_CODE`. The endpoint then
->    returns 404 for everyone, even with the correct password —
->    closing the door without changing the secret itself.
+>    `railway variables --unset REVIEWER_LOGIN_CODE`.
+>
+> Unsetting the variable has three effects, all immediate (no app
+> resubmission required):
+>
+> 1. `POST /v1/auth/reviewer` returns `404 NOT_FOUND` for every caller,
+>    including ones holding the previously-valid secret.
+> 2. `GET /v1/config/public` returns `{ reviewerSignInEnabled: false }`,
+>    which the iOS Sign In screen reads on every appearance — the
+>    visible **"App Reviewer Sign-In"** link disappears for real users.
+> 3. The hidden triple-tap backup gesture still opens the credentials
+>    sheet (we keep it as a recovery path for the next submission), but
+>    its Continue button just shows "Sign-in not accepted." since the
+>    endpoint is closed.
 >
 > Rotate the secret only if you suspect it leaked publicly. The 192-bit
 > hex value plus the per-IP rate limit makes brute force infeasible,

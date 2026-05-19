@@ -22,6 +22,28 @@ const SignInBody = z.object({
 });
 
 const routes: FastifyPluginAsync = async (app) => {
+  /**
+   * Public, unauthenticated config blob for the Sign In screen.
+   *
+   * The iOS client polls this once on Sign In view appearance to decide
+   * whether to render the visible "App Reviewer Sign-In" link. The flag
+   * is derived from the same `REVIEWER_LOGIN_CODE` env var that gates
+   * `/v1/auth/reviewer` itself, so unsetting the var on Railway after
+   * App Store approval both 404s the endpoint AND hides the link in the
+   * app — no app resubmission required, no separate feature flag to
+   * forget about.
+   *
+   * Returns `{ reviewerSignInEnabled: false }` on errors so a malformed
+   * env var defaults to "hidden" rather than "visible". Cache-Control
+   * 60s keeps it cheap.
+   */
+  app.get('/v1/config/public', async (_req, reply) => {
+    reply.header('cache-control', 'public, max-age=60');
+    return reply.send({
+      reviewerSignInEnabled: !!env.REVIEWER_LOGIN_CODE,
+    });
+  });
+
   app.post('/v1/auth/apple', async (req, reply) => {
     const body = SignInBody.parse(req.body);
     const verified = await verifyAppleIdentityToken(body.identityToken);

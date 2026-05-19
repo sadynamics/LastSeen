@@ -20,6 +20,16 @@ nonisolated struct AppleSignInResponse: Decodable, Sendable {
     let user: User
 }
 
+/// Response of `GET /v1/config/public`. Tiny public blob used by the
+/// Sign In screen to decide whether the App Reviewer Sign-In link
+/// should be visible. The backend derives `reviewerSignInEnabled` from
+/// the `REVIEWER_LOGIN_CODE` env var, so toggling that var off on
+/// Railway post-approval auto-hides the link without an app
+/// resubmission.
+nonisolated struct PublicConfig: Decodable, Sendable {
+    let reviewerSignInEnabled: Bool
+}
+
 /// Body for `POST /v1/auth/reviewer`. Used by the App Review-only login
 /// path; gated on the backend by the `REVIEWER_LOGIN_CODE` env var so the
 /// endpoint 404s when unset.

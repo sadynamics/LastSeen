@@ -81,6 +81,18 @@ final class AuthService {
         }
     }
 
+    /// Fetches public, unauthenticated config used by the Sign In
+    /// screen. Returns `nil` on any error so the caller can fall back to
+    /// the safe default (e.g. reviewer link hidden). Safe to call before
+    /// the user is signed in.
+    func fetchPublicConfig() async -> PublicConfig? {
+        do {
+            return try await api.get("/v1/config/public", as: PublicConfig.self)
+        } catch {
+            return nil
+        }
+    }
+
     /// App Review hidden login (legacy single-code shape). Backed by
     /// `REVIEWER_LOGIN_CODE` on the server; throws on 401/404 so the
     /// caller can show a generic error.
