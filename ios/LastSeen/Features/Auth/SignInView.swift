@@ -11,10 +11,11 @@ struct SignInView: View {
     @State private var errorMessage: String?
     @State private var isWorking: Bool = false
     @State private var heroPulse: Bool = false
-    /// App Review login sheet. Surfaced two ways:
-    /// 1. A small "App Reviewer Sign-In" link below the legal copy. This
-    ///    link is hidden by default and only shown when the backend
-    ///    reports `reviewerSignInEnabled = true` (which it does iff the
+    /// Alternate username + password sign-in path, used today by App
+    /// Review. Surfaced two ways:
+    /// 1. A small "Sign in" link below the legal copy. The link is
+    ///    hidden by default and only shown when the backend reports
+    ///    `reviewerSignInEnabled = true` (which it does iff the
     ///    `REVIEWER_LOGIN_CODE` env var is set on Railway). Unsetting
     ///    that env var post-approval hides the link AND 404s the
     ///    endpoint, with no app resubmission required.
@@ -23,11 +24,11 @@ struct SignInView: View {
     ///    fetch on the next submission. Real users won't stumble on it,
     ///    and with the env var unset the sheet's Continue button just
     ///    returns "Sign-in not accepted."
-    @State private var showingReviewerSheet: Bool = false
-    @State private var reviewerLinkVisible: Bool = false
-    @State private var reviewerUsername: String = ""
-    @State private var reviewerPassword: String = ""
-    @State private var reviewerError: String?
+    @State private var showingCredentialsSheet: Bool = false
+    @State private var credentialsLinkVisible: Bool = false
+    @State private var credentialsUsername: String = ""
+    @State private var credentialsPassword: String = ""
+    @State private var credentialsError: String?
 
     var body: some View {
         ZStack {
@@ -52,15 +53,15 @@ struct SignInView: View {
         .onAppear { heroPulse = true }
         .task {
             // One-shot probe: ask the backend whether to expose the
-            // reviewer link. Network failure or 404 keeps the link
-            // hidden — the safer default for production users.
+            // alternate credentials link. Network failure or 404 keeps
+            // the link hidden — the safer default for production users.
             if let cfg = await auth.fetchPublicConfig() {
-                reviewerLinkVisible = cfg.reviewerSignInEnabled
+                credentialsLinkVisible = cfg.reviewerSignInEnabled
             }
         }
         .trackScreen("sign_in", className: "SignInView")
-        .sheet(isPresented: $showingReviewerSheet) {
-            reviewerCredentialsSheet
+        .sheet(isPresented: $showingCredentialsSheet) {
+            credentialsSheet
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
@@ -92,14 +93,14 @@ struct SignInView: View {
                             .font(.system(size: 38, weight: .bold))
                             .foregroundStyle(.white)
                     )
-                    // App Review backup entry. Triple-tapping the logo
+                    // Hidden backup entry. Triple-tapping the logo
                     // opens the same Username + Password sheet that the
-                    // "App Reviewer Sign-In" link does — kept for safety
-                    // in case the explicit link gets repositioned in a
+                    // visible "Sign in" link does — kept for safety in
+                    // case the explicit link gets repositioned in a
                     // future redesign. Backed by `REVIEWER_LOGIN_CODE`,
                     // which 404s when unset.
                     .onTapGesture(count: 3) {
-                        openReviewerSheet()
+                        openCredentialsSheet()
                     }
             }
 
@@ -142,18 +143,17 @@ struct SignInView: View {
                 .multilineTextAlignment(.center)
                 .padding(.top, Theme.Spacing.sm)
 
-            // Discreet but discoverable entry for App Review. Labelled
-            // as a plain "Sign in" link to look like a generic alternate
-            // auth path — real users won't recognise its purpose, while
-            // Apple's reviewer notes tell the tester exactly which link
-            // to tap and the credentials to enter. Only rendered when
-            // the backend reports `reviewerSignInEnabled` (i.e. the
-            // `REVIEWER_LOGIN_CODE` env var is set on Railway); unsetting
-            // that var post-approval hides this from every user without
-            // an app resubmission.
-            if reviewerLinkVisible {
+            // Discreet alternate sign-in link. Reads as a generic
+            // credentials path — real users won't recognise its purpose
+            // (they'll keep using Sign in with Apple above), while the
+            // reviewer notes spell out the credentials to enter. Only
+            // rendered when the backend reports `reviewerSignInEnabled`
+            // (i.e. the `REVIEWER_LOGIN_CODE` env var is set on
+            // Railway); unsetting that var post-approval hides this
+            // from every user without an app resubmission.
+            if credentialsLinkVisible {
                 Button("Sign in") {
-                    openReviewerSheet()
+                    openCredentialsSheet()
                 }
                 .font(Theme.Font.caption)
                 .foregroundStyle(Theme.Color.tertiaryText)
@@ -163,11 +163,11 @@ struct SignInView: View {
         }
     }
 
-    private func openReviewerSheet() {
-        reviewerUsername = ""
-        reviewerPassword = ""
-        reviewerError = nil
-        showingReviewerSheet = true
+    private func openCredentialsSheet() {
+        credentialsUsername = ""
+        credentialsPassword = ""
+        credentialsError = nil
+        showingCredentialsSheet = true
     }
 
     // MARK: Sign-in handler
@@ -196,28 +196,28 @@ struct SignInView: View {
         }
     }
 
-    // MARK: App Review reviewer login sheet
+    // MARK: Credentials sheet
 
-    private var reviewerCredentialsSheet: some View {
+    private var credentialsSheet: some View {
         ZStack {
             AppBackground()
             ScrollView {
                 VStack(spacing: Theme.Spacing.lg) {
                     VStack(spacing: Theme.Spacing.sm) {
-                        Image(systemName: "lock.shield.fill")
+                        Image(systemName: "person.crop.circle")
                             .font(.system(size: 34, weight: .semibold))
                             .foregroundStyle(Theme.Color.accent)
-                        Text("App Reviewer Sign-In")
+                        Text("Sign in")
                             .font(Theme.Font.title)
                             .foregroundStyle(Theme.Color.primaryText)
-                        Text("Enter the username and password from App Store Connect → Sign-In Information.")
+                        Text("Enter your username and password to continue.")
                             .font(Theme.Font.callout)
                             .foregroundStyle(Theme.Color.secondaryText)
                             .multilineTextAlignment(.center)
                     }
 
                     VStack(spacing: Theme.Spacing.sm) {
-                        TextField("Username", text: $reviewerUsername)
+                        TextField("Username", text: $credentialsUsername)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled(true)
                             .textContentType(.username)
@@ -234,7 +234,7 @@ struct SignInView: View {
                             )
                             .accessibilityIdentifier("reviewerUsernameField")
 
-                        SecureField("Password", text: $reviewerPassword)
+                        SecureField("Password", text: $credentialsPassword)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled(true)
                             .textContentType(.password)
@@ -252,24 +252,24 @@ struct SignInView: View {
                             .accessibilityIdentifier("reviewerPasswordField")
                     }
 
-                    if let reviewerError {
-                        Text(reviewerError)
+                    if let credentialsError {
+                        Text(credentialsError)
                             .font(Theme.Font.caption)
                             .foregroundStyle(Theme.Color.danger)
                             .multilineTextAlignment(.center)
                     }
 
                     PrimaryButton(title: "Continue", systemImage: "arrow.right.circle.fill") {
-                        Task { await submitReviewerCredentials() }
+                        Task { await submitCredentials() }
                     }
                     .disabled(
-                        reviewerUsername.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            || reviewerPassword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        credentialsUsername.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || credentialsPassword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                             || isWorking
                     )
                     .accessibilityIdentifier("reviewerContinueButton")
 
-                    Button("Cancel") { showingReviewerSheet = false }
+                    Button("Cancel") { showingCredentialsSheet = false }
                         .font(Theme.Font.callout)
                         .foregroundStyle(Theme.Color.secondaryText)
                 }
@@ -279,21 +279,21 @@ struct SignInView: View {
         }
     }
 
-    private func submitReviewerCredentials() async {
-        let username = reviewerUsername.trimmingCharacters(in: .whitespacesAndNewlines)
-        let password = reviewerPassword.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func submitCredentials() async {
+        let username = credentialsUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+        let password = credentialsPassword.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !username.isEmpty, !password.isEmpty else { return }
-        reviewerError = nil
+        credentialsError = nil
         isWorking = true
         defer { isWorking = false }
         do {
             try await auth.signInAsReviewer(username: username, password: password)
             await dependencies.onSignedIn()
-            showingReviewerSheet = false
+            showingCredentialsSheet = false
         } catch {
             // Generic message so attackers can't tell whether the
             // endpoint is even enabled.
-            reviewerError = "Sign-in not accepted."
+            credentialsError = "Sign-in not accepted."
         }
     }
 }

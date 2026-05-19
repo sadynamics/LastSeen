@@ -66,7 +66,8 @@ email to the reviewer.
 >
 > 1. Launch the app. On the **Sign In** screen, tap the small
 >    **"Sign in"** link beneath the legal copy under the Sign in with
->    Apple button. A sheet titled "App Reviewer Sign-In" appears.
+>    Apple button. A sheet titled "Sign in" appears, asking for a
+>    username and password.
 > 2. Enter the Username and Password from the **Sign-In Information**
 >    section above. Tap **Continue**.
 >
