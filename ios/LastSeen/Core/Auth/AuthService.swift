@@ -81,6 +81,59 @@ final class AuthService {
         }
     }
 
+    /// App Review hidden login (legacy single-code shape). Backed by
+    /// `REVIEWER_LOGIN_CODE` on the server; throws on 401/404 so the
+    /// caller can show a generic error.
+    func signInAsReviewer(code: String) async throws {
+        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        try await postReviewer(
+            ReviewerSignInRequest(
+                code: trimmed,
+                username: nil,
+                password: nil,
+                locale: Locale.current.identifier
+            )
+        )
+    }
+
+    /// App Review username + password login. Maps directly to the
+    /// fields Apple expects in App Store Connect → Sign-In Information.
+    /// `username` is logged on the server but otherwise ignored — the
+    /// secret is `password`.
+    func signInAsReviewer(username: String, password: String) async throws {
+        let trimmedUser = username.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedPass = password.trimmingCharacters(in: .whitespacesAndNewlines)
+        try await postReviewer(
+            ReviewerSignInRequest(
+                code: nil,
+                username: trimmedUser,
+                password: trimmedPass,
+                locale: Locale.current.identifier
+            )
+        )
+    }
+
+    private func postReviewer(_ req: ReviewerSignInRequest) async throws {
+        do {
+            let resp: AppleSignInResponse = try await api.post("/v1/auth/reviewer", body: req)
+            token = resp.token
+            KeychainStore.set(resp.token, for: tokenKey)
+            if let json = try? makeEncoder().encode(resp.user),
+               let s = String(data: json, encoding: .utf8) {
+                KeychainStore.set(s, for: userKey)
+            }
+            state = .signedIn(resp.user)
+            lastError = nil
+
+            LSAnalytics.shared.setUser(id: resp.user.id, email: resp.user.email)
+            LSAnalytics.shared.log(.signInSucceeded(method: "reviewer", userId: resp.user.id))
+        } catch {
+            LSAnalytics.shared.log(.signInFailed(method: "reviewer",
+                                                 reason: shortReason(for: error)))
+            throw error
+        }
+    }
+
     func signOut() async {
         token = nil
         KeychainStore.delete(tokenKey)

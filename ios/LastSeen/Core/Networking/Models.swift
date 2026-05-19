@@ -20,6 +20,22 @@ nonisolated struct AppleSignInResponse: Decodable, Sendable {
     let user: User
 }
 
+/// Body for `POST /v1/auth/reviewer`. Used by the App Review-only login
+/// path; gated on the backend by the `REVIEWER_LOGIN_CODE` env var so the
+/// endpoint 404s when unset.
+///
+/// Supports two shapes so we can both keep the legacy hidden triple-tap
+/// flow (`code`) and present a normal Username + Password form whose
+/// values map 1:1 to App Store Connect → Sign-In Information
+/// (`username` + `password`). The backend validates `password` (falling
+/// back to `code`) against the shared secret.
+nonisolated struct ReviewerSignInRequest: Encodable, Sendable {
+    let code: String?
+    let username: String?
+    let password: String?
+    let locale: String?
+}
+
 nonisolated struct User: Codable, Hashable, Sendable {
     let id: String
     let email: String?
@@ -176,6 +192,13 @@ nonisolated struct BillingStatus: Decodable, Sendable {
     }
     let isSubscribed: Bool
     let subscription: SubscriptionInfo?
+    /// Number of tracked numbers this user can keep active WITHOUT an
+    /// active Premium subscription. Always 0 for normal users; 1 for
+    /// App Review reviewer accounts so reviewers can test the core
+    /// tracking flow without redeeming a sandbox purchase, while the
+    /// 2nd add still surfaces the paywall.
+    /// Optional for backward compatibility with older backends.
+    let freeTrackedSlots: Int?
 }
 
 // MARK: - Me

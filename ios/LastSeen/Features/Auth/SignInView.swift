@@ -11,6 +11,18 @@ struct SignInView: View {
     @State private var errorMessage: String?
     @State private var isWorking: Bool = false
     @State private var heroPulse: Bool = false
+    /// App Review login sheet. Surfaced two ways:
+    /// 1. A small "App Reviewer Sign-In" link below the legal copy.
+    /// 2. (Legacy) Triple-tap on the hero logo.
+    /// Both routes lead to the same Username + Password sheet, which
+    /// matches what Apple's reviewer enters into App Store Connect →
+    /// Sign-In Information. Backed by `REVIEWER_LOGIN_CODE` on the
+    /// server; when that env var is unset the endpoint 404s so the UI is
+    /// harmless post-approval.
+    @State private var showingReviewerSheet: Bool = false
+    @State private var reviewerUsername: String = ""
+    @State private var reviewerPassword: String = ""
+    @State private var reviewerError: String?
 
     var body: some View {
         ZStack {
@@ -34,6 +46,11 @@ struct SignInView: View {
         }
         .onAppear { heroPulse = true }
         .trackScreen("sign_in", className: "SignInView")
+        .sheet(isPresented: $showingReviewerSheet) {
+            reviewerCredentialsSheet
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
     }
 
     // MARK: Hero
@@ -62,13 +79,22 @@ struct SignInView: View {
                             .font(.system(size: 38, weight: .bold))
                             .foregroundStyle(.white)
                     )
+                    // App Review backup entry. Triple-tapping the logo
+                    // opens the same Username + Password sheet that the
+                    // "App Reviewer Sign-In" link does — kept for safety
+                    // in case the explicit link gets repositioned in a
+                    // future redesign. Backed by `REVIEWER_LOGIN_CODE`,
+                    // which 404s when unset.
+                    .onTapGesture(count: 3) {
+                        openReviewerSheet()
+                    }
             }
 
             VStack(spacing: 8) {
-                Text("LastSeen")
+                Text(L10n.appName)
                     .font(Theme.Font.display)
                     .foregroundStyle(Theme.Color.primaryText)
-                Text("Quietly understand WhatsApp activity\nwith private daily insights.")
+                Text(L10n.signInTagline)
                     .font(Theme.Font.callout)
                     .foregroundStyle(Theme.Color.secondaryText)
                     .multilineTextAlignment(.center)
@@ -97,12 +123,30 @@ struct SignInView: View {
                     .multilineTextAlignment(.center)
             }
 
-            Text("By continuing you agree to our Terms and Privacy.")
+            Text(L10n.signInLegal)
                 .font(Theme.Font.caption)
                 .foregroundStyle(Theme.Color.tertiaryText)
                 .multilineTextAlignment(.center)
                 .padding(.top, Theme.Spacing.sm)
+
+            // Discreet but discoverable entry for App Review. Apple's
+            // reviewer notes tell the tester to tap this link and enter
+            // the Sign-In Information credentials we provide in App
+            // Store Connect.
+            Button("App Reviewer Sign-In") {
+                openReviewerSheet()
+            }
+            .font(Theme.Font.caption)
+            .foregroundStyle(Theme.Color.tertiaryText)
+            .accessibilityIdentifier("reviewerSignInLink")
         }
+    }
+
+    private func openReviewerSheet() {
+        reviewerUsername = ""
+        reviewerPassword = ""
+        reviewerError = nil
+        showingReviewerSheet = true
     }
 
     // MARK: Sign-in handler
@@ -114,7 +158,7 @@ struct SignInView: View {
             errorMessage = err.localizedDescription
         case .success(let authorization):
             guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else {
-                errorMessage = "Couldn't read Apple credential"
+                errorMessage = L10n.signInAppleCredentialError
                 return
             }
             isWorking = true
@@ -128,6 +172,107 @@ struct SignInView: View {
             } catch {
                 errorMessage = error.localizedDescription
             }
+        }
+    }
+
+    // MARK: App Review reviewer login sheet
+
+    private var reviewerCredentialsSheet: some View {
+        ZStack {
+            AppBackground()
+            ScrollView {
+                VStack(spacing: Theme.Spacing.lg) {
+                    VStack(spacing: Theme.Spacing.sm) {
+                        Image(systemName: "lock.shield.fill")
+                            .font(.system(size: 34, weight: .semibold))
+                            .foregroundStyle(Theme.Color.accent)
+                        Text("App Reviewer Sign-In")
+                            .font(Theme.Font.title)
+                            .foregroundStyle(Theme.Color.primaryText)
+                        Text("Enter the username and password from App Store Connect → Sign-In Information.")
+                            .font(Theme.Font.callout)
+                            .foregroundStyle(Theme.Color.secondaryText)
+                            .multilineTextAlignment(.center)
+                    }
+
+                    VStack(spacing: Theme.Spacing.sm) {
+                        TextField("Username", text: $reviewerUsername)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled(true)
+                            .textContentType(.username)
+                            .keyboardType(.emailAddress)
+                            .padding(.horizontal, Theme.Spacing.md)
+                            .padding(.vertical, Theme.Spacing.sm)
+                            .background(
+                                RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
+                                    .fill(Color.white.opacity(0.06))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
+                                    .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                            )
+                            .accessibilityIdentifier("reviewerUsernameField")
+
+                        SecureField("Password", text: $reviewerPassword)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled(true)
+                            .textContentType(.password)
+                            .font(.system(.body, design: .monospaced))
+                            .padding(.horizontal, Theme.Spacing.md)
+                            .padding(.vertical, Theme.Spacing.sm)
+                            .background(
+                                RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
+                                    .fill(Color.white.opacity(0.06))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
+                                    .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                            )
+                            .accessibilityIdentifier("reviewerPasswordField")
+                    }
+
+                    if let reviewerError {
+                        Text(reviewerError)
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Color.danger)
+                            .multilineTextAlignment(.center)
+                    }
+
+                    PrimaryButton(title: "Continue", systemImage: "arrow.right.circle.fill") {
+                        Task { await submitReviewerCredentials() }
+                    }
+                    .disabled(
+                        reviewerUsername.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || reviewerPassword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || isWorking
+                    )
+                    .accessibilityIdentifier("reviewerContinueButton")
+
+                    Button("Cancel") { showingReviewerSheet = false }
+                        .font(Theme.Font.callout)
+                        .foregroundStyle(Theme.Color.secondaryText)
+                }
+                .padding(.horizontal, Theme.Spacing.xl)
+                .padding(.vertical, Theme.Spacing.xl)
+            }
+        }
+    }
+
+    private func submitReviewerCredentials() async {
+        let username = reviewerUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+        let password = reviewerPassword.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !username.isEmpty, !password.isEmpty else { return }
+        reviewerError = nil
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            try await auth.signInAsReviewer(username: username, password: password)
+            await dependencies.onSignedIn()
+            showingReviewerSheet = false
+        } catch {
+            // Generic message so attackers can't tell whether the
+            // endpoint is even enabled.
+            reviewerError = "Sign-in not accepted."
         }
     }
 }

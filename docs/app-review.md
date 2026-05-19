@@ -31,13 +31,88 @@ These are implemented; do not remove without re-reading App Review guidelines:
    - Crash data (Sentry) → not linked to user.
    - No location, contacts, or analytics SDKs.
 
-## App Review notes (Connect → Build → "Notes")
+## App Review sign-in (App Store Connect)
 
-> LastSeen is a family activity monitor for WhatsApp. To test, sign in with Apple, agree to the consent screen, and add a phone number you own. Use this test account:
+App Store Connect collects reviewer credentials in two places:
+
+1. **App Information → App Review Information → Sign-In Information**
+   (the two fields literally labelled *Username* and *Password*).
+2. **App Review Notes** (the long-form text box below).
+
+We fill all three.
+
+### Sign-In Information
+
+| Field      | Value                                                         |
+|------------|---------------------------------------------------------------|
+| Username   | `reviewer@lastseen.app`                                       |
+| Password   | the current value of `REVIEWER_LOGIN_CODE` (from 1Password)   |
+
+The `username` is logged on the server but otherwise ignored — the
+shared secret is the password, validated with a constant-time compare
+against `REVIEWER_LOGIN_CODE`. Any non-empty username is accepted; we
+standardise on `reviewer@lastseen.app` so the field looks like a real
+email to the reviewer.
+
+### App Review Notes
+
+> LastSeen is a family activity monitor for WhatsApp. Tracking is a
+> Premium feature, but we've provisioned a reviewer login that grants
+> a **single free tracked-number slot** so you can verify both the
+> core tracking experience and the paywall flow without redeeming a
+> sandbox purchase.
 >
-> - Phone: +90 555 ... ...
-> - Subscription: use Sandbox tester `qa@lastseen.app`
-> - The tracked WhatsApp account is operated by us for testing purposes.
+> **Reviewer sign-in:**
+>
+> 1. Launch the app. On the **Sign In** screen, tap the small
+>    **"App Reviewer Sign-In"** link beneath the legal copy under the
+>    Sign in with Apple button. A sheet titled "App Reviewer Sign-In"
+>    appears.
+> 2. Enter the Username and Password from the **Sign-In Information**
+>    section above. Tap **Continue**.
+>
+> (As a backup the same sheet is also reachable by triple-tapping the
+> round LastSeen logo at the top of the screen — useful if anything
+> obscures the link in a future build.)
+>
+> **What to test:**
+>
+> 1. After signing in, tap **Add Number** and add the test phone we
+>    operate for review: `+90 555 ... ...`. Live activity will appear
+>    within ~30 seconds of the tracked phone toggling WhatsApp.
+> 2. Tap **Add Number** a second time — you'll see the paywall, which
+>    is the standard experience for non-paying users. Closing the
+>    paywall returns you to the activity screen.
+> 3. Optionally tap **Upgrade to Premium** to inspect the StoreKit
+>    sheet. You may purchase with Sandbox tester
+>    `qa@lastseen.app` (no real charge); after purchase the paywall
+>    no longer appears and you can add additional numbers.
+> 4. Settings → **Delete Account** performs an end-to-end wipe
+>    (server-side row delete + signed-out state). Required by
+>    App Review § 5.1.1(v).
+>
+> The reviewer account behaves exactly like a free-tier user with one
+> exception: it gets one complimentary tracked-number slot so you
+> aren't blocked by the paywall on first launch. All other Premium
+> features (multi-number tracking, advanced reports) remain paywalled
+> as they will be for end users.
+
+> [!IMPORTANT]
+> Submission cycle (the secret can be reused across submissions):
+> 1. Take the long-lived `REVIEWER_LOGIN_CODE` from 1Password
+>    (initial value was generated with `openssl rand -hex 24`).
+> 2. Set it on Railway: `railway service api && railway variables --set "REVIEWER_LOGIN_CODE=…"`.
+> 3. Paste the **same** value into the Sign-In Information **Password**
+>    field for this build's App Review submission. Username stays
+>    `reviewer@lastseen.app`.
+> 4. Once the build is approved, **unset** the variable:
+>    `railway variables --unset REVIEWER_LOGIN_CODE`. The endpoint then
+>    returns 404 for everyone, even with the correct password —
+>    closing the door without changing the secret itself.
+>
+> Rotate the secret only if you suspect it leaked publicly. The 192-bit
+> hex value plus the per-IP rate limit makes brute force infeasible,
+> and unsetting the env var fully revokes access between submissions.
 
 ## Anticipated rejection patterns
 
