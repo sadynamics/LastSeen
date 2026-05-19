@@ -56,46 +56,38 @@ email to the reviewer.
 
 ### App Review Notes
 
-> LastSeen is a family activity monitor for WhatsApp. Tracking is a
-> Premium feature, but we've provisioned a reviewer login that grants
-> a **single free tracked-number slot** so you can verify both the
-> core tracking experience and the paywall flow without redeeming a
-> sandbox purchase.
+The block below is intended to be **copy-pasted verbatim** into App
+Store Connect → App Information → **App Review Information → Notes**
+(the long-form text box below the Sign-In Information fields).
+
+Everything outside the blockquote is internal commentary and should
+NOT be pasted.
+
+> LastSeen is a family / self monitoring tool for WhatsApp activity.
+> Onboarding requires the user to confirm they will only track
+> accounts they own or have permission to monitor.
 >
-> **Reviewer sign-in:**
+> Sign in:
+> 1. Complete the brief onboarding (you do NOT need Sign in with Apple).
+> 2. On the Sign In screen, tap the small "Sign in" link below the
+>    legal text. Enter the Username and Password from the Sign-In
+>    Information fields above. Tap Continue.
 >
-> 1. Launch the app. On the **Sign In** screen, tap the small
->    **"Sign in"** link beneath the legal copy under the Sign in with
->    Apple button. A sheet titled "Sign in" appears, asking for a
->    username and password.
-> 2. Enter the Username and Password from the **Sign-In Information**
->    section above. Tap **Continue**.
+> Test:
+> 1. Tap "Add a number" and enter a WhatsApp number you have
+>    permission to monitor (your own is easiest). Open WhatsApp on
+>    that phone to generate activity — LastSeen updates within ~30s.
+> 2. Tap "Add a number" again to see the paywall (Premium gate).
+> 3. To free the slot: tap the row → "Remove this number". You can
+>    then add a different number with no paywall.
+> 4. Settings → "Delete account" wipes the account (Guideline 5.1.1(v)).
 >
-> (As a backup the same sheet is also reachable by triple-tapping the
-> round LastSeen logo at the top of the screen — useful if anything
-> obscures the link in a future build.)
+> Notes: the app does not read messages, contacts, or location, and
+> respects WhatsApp's own privacy controls (numbers with last-seen
+> set to "Nobody" show limited activity, matching native WhatsApp
+> behavior).
 >
-> **What to test:**
->
-> 1. After signing in, tap **Add Number** and add the test phone we
->    operate for review: `+90 555 ... ...`. Live activity will appear
->    within ~30 seconds of the tracked phone toggling WhatsApp.
-> 2. Tap **Add Number** a second time — you'll see the paywall, which
->    is the standard experience for non-paying users. Closing the
->    paywall returns you to the activity screen.
-> 3. Optionally tap **Upgrade to Premium** to inspect the StoreKit
->    sheet. You may purchase with Sandbox tester
->    `qa@lastseen.app` (no real charge); after purchase the paywall
->    no longer appears and you can add additional numbers.
-> 4. Settings → **Delete Account** performs an end-to-end wipe
->    (server-side row delete + signed-out state). Required by
->    App Review § 5.1.1(v).
->
-> The reviewer account behaves exactly like a free-tier user with one
-> exception: it gets one complimentary tracked-number slot so you
-> aren't blocked by the paywall on first launch. All other Premium
-> features (multi-number tracking, advanced reports) remain paywalled
-> as they will be for end users.
+> Questions: support@lastseen.app
 
 > [!IMPORTANT]
 > Submission cycle (the secret can be reused across submissions):
