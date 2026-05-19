@@ -40,6 +40,13 @@ const schema = z.object({
   ADMIN_BASIC_USER: z.string().default('admin'),
   ADMIN_BASIC_PASSWORD: z.string().min(8),
 
+  /// One-shot login code we hand to Apple App Review. When set, the
+  /// `POST /v1/auth/reviewer` endpoint exchanges this exact value for a
+  /// session JWT bound to a reviewer-flagged user. Leave empty (or unset)
+  /// in production once review is approved — the endpoint then 404s.
+  /// MUST be 24+ random characters when set.
+  REVIEWER_LOGIN_CODE: z.string().optional().default(''),
+
   SENTRY_DSN: z.string().optional().default(''),
   SENTRY_ENVIRONMENT: z.string().optional(),
 

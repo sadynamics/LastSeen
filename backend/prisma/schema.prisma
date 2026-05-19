@@ -18,6 +18,11 @@ model User {
   appleSub  String    @unique
   email     String?
   locale    String?
+  /// Flagged true for App Review reviewer accounts created via
+  /// `POST /v1/auth/reviewer`. Bypasses the StoreKit entitlement check so
+  /// reviewers can use Premium features without buying a subscription,
+  /// and is excluded from analytics / paying-customer counts.
+  isReviewer Boolean  @default(false)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -27,6 +32,7 @@ model User {
   subscriptions   Subscription[]
 
   @@index([deletedAt])
+  @@index([isReviewer])
   @@map("users")
 }
 
