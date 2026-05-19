@@ -65,9 +65,8 @@ email to the reviewer.
 > **Reviewer sign-in:**
 >
 > 1. Launch the app. On the **Sign In** screen, tap the small
->    **"App Reviewer Sign-In"** link beneath the legal copy under the
->    Sign in with Apple button. A sheet titled "App Reviewer Sign-In"
->    appears.
+>    **"Sign in"** link beneath the legal copy under the Sign in with
+>    Apple button. A sheet titled "App Reviewer Sign-In" appears.
 > 2. Enter the Username and Password from the **Sign-In Information**
 >    section above. Tap **Continue**.
 >
@@ -115,7 +114,7 @@ email to the reviewer.
 >    including ones holding the previously-valid secret.
 > 2. `GET /v1/config/public` returns `{ reviewerSignInEnabled: false }`,
 >    which the iOS Sign In screen reads on every appearance — the
->    visible **"App Reviewer Sign-In"** link disappears for real users.
+>    visible **"Sign in"** reviewer link disappears for real users.
 > 3. The hidden triple-tap backup gesture still opens the credentials
 >    sheet (we keep it as a recovery path for the next submission), but
 >    its Continue button just shows "Sign-in not accepted." since the

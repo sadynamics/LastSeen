@@ -142,16 +142,17 @@ struct SignInView: View {
                 .multilineTextAlignment(.center)
                 .padding(.top, Theme.Spacing.sm)
 
-            // Discreet but discoverable entry for App Review. Apple's
-            // reviewer notes tell the tester to tap this link and enter
-            // the Sign-In Information credentials we provide in App
-            // Store Connect. Only rendered when the backend reports
-            // `reviewerSignInEnabled` — controlled by toggling the
-            // `REVIEWER_LOGIN_CODE` env var on Railway, so unsetting
-            // post-approval hides this from every user without an app
-            // resubmission.
+            // Discreet but discoverable entry for App Review. Labelled
+            // as a plain "Sign in" link to look like a generic alternate
+            // auth path — real users won't recognise its purpose, while
+            // Apple's reviewer notes tell the tester exactly which link
+            // to tap and the credentials to enter. Only rendered when
+            // the backend reports `reviewerSignInEnabled` (i.e. the
+            // `REVIEWER_LOGIN_CODE` env var is set on Railway); unsetting
+            // that var post-approval hides this from every user without
+            // an app resubmission.
             if reviewerLinkVisible {
-                Button("App Reviewer Sign-In") {
+                Button("Sign in") {
                     openReviewerSheet()
                 }
                 .font(Theme.Font.caption)
